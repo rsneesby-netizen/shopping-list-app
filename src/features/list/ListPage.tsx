@@ -1,0 +1,725 @@
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
+import { useUndoRedo } from '../../hooks/useUndoRedo'
+import { categoryLabel, inferCategoryKey, listCategoryDefs } from '../../lib/categories'
+import { logListItemEvent } from '../../lib/events'
+import { fingerprintFromText } from '../../lib/normalize'
+import { keyAfterLast, keyAfterReorder, sortByPosition } from '../../lib/positions'
+import { buildSuggestions } from '../../lib/recommendations'
+import {
+  filterStoreLayouts,
+  pickDefaultStoreLayoutId,
+  rememberLastStoreLayoutId,
+} from '../../lib/storeLayouts'
+import { getSupabase } from '../../lib/supabase'
+import type { ListItemEventRow, ListItemRow, ListRow, StorePresetCategoryRow, StorePresetRow } from '../../types'
+import { CategoryOrderModal } from './CategoryOrderModal'
+import { RecommendationsDrawer } from './RecommendationsDrawer'
+import { SortableItem } from './SortableItem'
+
+export function ListPage() {
+  const { listId } = useParams()
+  const supabase = getSupabase()
+  const { push, undo, redo, canUndo, canRedo } = useUndoRedo()
+
+  const [list, setList] = useState<ListRow | null>(null)
+  const [items, setItems] = useState<ListItemRow[]>([])
+  const [presets, setPresets] = useState<StorePresetRow[]>([])
+  const [presetCats, setPresetCats] = useState<StorePresetCategoryRow[]>([])
+  const [events, setEvents] = useState<ListItemEventRow[]>([])
+  const [title, setTitle] = useState('')
+  const [newText, setNewText] = useState('')
+  const [newQty, setNewQty] = useState(1)
+  const [newUnit, setNewUnit] = useState('each')
+  const [view, setView] = useState<'flat' | 'grouped'>('flat')
+  const [recOpen, setRecOpen] = useState(false)
+  const [catOpen, setCatOpen] = useState(false)
+  const [actionsOpen, setActionsOpen] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null)
+  const actionsMenuRef = useRef<HTMLDivElement | null>(null)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  const refreshAll = useCallback(async () => {
+    if (!listId) return
+    const [{ data: l, error: e1 }, { data: its, error: e2 }, { data: evs, error: e3 }] = await Promise.all([
+      supabase.from('lists').select('*').eq('id', listId).maybeSingle(),
+      supabase.from('list_items').select('*').eq('list_id', listId),
+      supabase.from('list_item_events').select('*').eq('list_id', listId).order('created_at', { ascending: false }).limit(800),
+    ])
+    if (e1) throw e1
+    if (e2) throw e2
+    if (e3) throw e3
+    setList(l as ListRow)
+    setTitle((l as ListRow | null)?.title ?? '')
+    setItems(sortByPosition((its ?? []) as ListItemRow[]))
+    setEvents((evs ?? []) as ListItemEventRow[])
+  }, [listId, supabase])
+
+  useEffect(() => {
+    if (!listId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const [{ data: presetRows }, { data: pcRows }] = await Promise.all([
+          supabase.from('store_presets').select('*').order('name'),
+          supabase.from('store_preset_categories').select('*').order('sort_index'),
+        ])
+        if (!cancelled) {
+          setPresets(filterStoreLayouts((presetRows ?? []) as StorePresetRow[]))
+          setPresetCats((pcRows ?? []) as StorePresetCategoryRow[])
+        }
+        await refreshAll()
+      } catch (e: unknown) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load')
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [listId, refreshAll, supabase])
+
+  useEffect(() => {
+    if (!listId) return
+    const channel = supabase
+      .channel(`list-items-${listId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'list_items', filter: `list_id=eq.${listId}` },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const row = payload.new as ListItemRow
+            setItems((prev) => {
+              if (prev.some((i) => i.id === row.id)) return prev
+              return sortByPosition([...prev, row])
+            })
+          } else if (payload.eventType === 'UPDATE') {
+            const row = payload.new as ListItemRow
+            setItems((prev) => sortByPosition(prev.map((i) => (i.id === row.id ? row : i))))
+          } else if (payload.eventType === 'DELETE') {
+            const id = (payload.old as { id: string }).id
+            setItems((prev) => prev.filter((i) => i.id !== id))
+          }
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'list_item_events', filter: `list_id=eq.${listId}` },
+        (payload) => {
+          const row = payload.new as ListItemEventRow
+          setEvents((prev) => [row, ...prev])
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'lists', filter: `id=eq.${listId}` },
+        (payload) => {
+          setList(payload.new as ListRow)
+          setTitle((payload.new as ListRow).title)
+        },
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [listId, supabase])
+
+  const activeSorted = useMemo(
+    () => sortByPosition(items.filter((i) => !i.checked)),
+    [items],
+  )
+  const completedSorted = useMemo(
+    () => sortByPosition(items.filter((i) => i.checked)),
+    [items],
+  )
+
+  const presetKeysOrdered = useMemo(() => {
+    if (!list?.store_preset_id) {
+      return listCategoryDefs().map((c) => c.key)
+    }
+    const keys = presetCats
+      .filter((c) => c.preset_id === list.store_preset_id)
+      .sort((a, b) => a.sort_index - b.sort_index)
+      .map((c) => c.category_key)
+    return keys.length ? keys : listCategoryDefs().map((c) => c.key)
+  }, [list, presetCats])
+
+  const categoryWalkOrder = useMemo(() => [...presetKeysOrdered], [presetKeysOrdered])
+
+  const suggestions = useMemo(
+    () => buildSuggestions(events, items),
+    [events, items],
+  )
+
+  async function persistTitle(next: string) {
+    if (!listId) return
+    const { error: e } = await supabase.from('lists').update({ title: next }).eq('id', listId)
+    if (e) setError(e.message)
+  }
+
+  async function persistPreset(presetId: string | null) {
+    if (!listId) return
+    const { error: e } = await supabase.from('lists').update({ store_preset_id: presetId }).eq('id', listId)
+    if (e) setError(e.message)
+    else {
+      if (presetId) rememberLastStoreLayoutId(presetId)
+      setList((prev) => (prev ? { ...prev, store_preset_id: presetId } : prev))
+    }
+  }
+
+  useEffect(() => {
+    if (!listId || !list || list.store_preset_id || !presets.length) return
+    const fallbackPresetId = pickDefaultStoreLayoutId(presets)
+    if (!fallbackPresetId) return
+    void persistPreset(fallbackPresetId)
+  }, [listId, list, presets])
+
+  useEffect(() => {
+    if (!actionsOpen) return
+    function onDocMouseDown(event: MouseEvent) {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (actionsMenuRef.current?.contains(target)) return
+      setActionsOpen(false)
+    }
+    function onDocKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setActionsOpen(false)
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    document.addEventListener('keydown', onDocKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onDocMouseDown)
+      document.removeEventListener('keydown', onDocKeyDown)
+    }
+  }, [actionsOpen])
+
+  async function insertItem(text: string, qty: number, unit: string) {
+    if (!listId) return
+    const trimmed = text.trim()
+    if (!trimmed) return
+    const fp = fingerprintFromText(trimmed)
+    const cat = inferCategoryKey(trimmed, null)
+    const activePositions = sortByPosition(items.filter((i) => !i.checked)).map((i) => i.position)
+    const position = keyAfterLast(activePositions)
+    let createdId: string | null = null
+    setError(null)
+    await push({
+      apply: async () => {
+        const { data, error: err } = await supabase
+          .from('list_items')
+          .insert({
+            list_id: listId,
+            text: trimmed,
+            quantity: qty,
+            unit,
+            checked: false,
+            position,
+            category_key: cat,
+          })
+          .select('*')
+          .single()
+        if (err) throw err
+        createdId = data.id
+        await logListItemEvent(supabase, {
+          listId,
+          itemId: data.id,
+          eventType: 'item_added',
+          fingerprint: fp,
+          payload: { text: trimmed, quantity: qty, unit },
+        })
+      },
+      revert: async () => {
+        if (!createdId) return
+        const { error: err } = await supabase.from('list_items').delete().eq('id', createdId)
+        if (err) throw err
+      },
+    })
+    await refreshAll()
+  }
+
+  async function onDragEnd(e: DragEndEvent) {
+    if (!listId) return
+    const { active, over } = e
+    if (!over) return
+    const activeItem = items.find((i) => i.id === active.id)
+    const overItem = items.find((i) => i.id === over.id)
+    if (!activeItem || !overItem || activeItem.checked !== overItem.checked) return
+    const bucket = activeItem.checked ? completedSorted : activeSorted
+    const oldIndex = bucket.findIndex((i) => i.id === active.id)
+    const newIndex = bucket.findIndex((i) => i.id === over.id)
+    if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return
+    const newPos = keyAfterReorder(bucket, oldIndex, newIndex)
+    const prevPos = activeItem.position
+    await push({
+      apply: async () => {
+        const { error: err } = await supabase.from('list_items').update({ position: newPos }).eq('id', activeItem.id)
+        if (err) throw err
+        await logListItemEvent(supabase, {
+          listId,
+          itemId: activeItem.id,
+          eventType: 'reorder',
+          fingerprint: fingerprintFromText(activeItem.text),
+          payload: { from: prevPos, to: newPos },
+        })
+      },
+      revert: async () => {
+        const { error: err } = await supabase.from('list_items').update({ position: prevPos }).eq('id', activeItem.id)
+        if (err) throw err
+      },
+    })
+    await refreshAll()
+  }
+
+  async function addItem() {
+    await insertItem(newText, newQty, newUnit)
+    setNewText('')
+    setNewQty(1)
+    setNewUnit('each')
+  }
+
+  async function deleteItem(id: string) {
+    if (!listId) return
+    const snap = items.find((i) => i.id === id)
+    if (!snap) return
+    const fp = fingerprintFromText(snap.text)
+    await push({
+      apply: async () => {
+        const { error: err } = await supabase.from('list_items').delete().eq('id', id)
+        if (err) throw err
+        await logListItemEvent(supabase, {
+          listId,
+          itemId: id,
+          eventType: 'item_deleted',
+          fingerprint: fp,
+          payload: { snapshot: snap },
+        })
+      },
+      revert: async () => {
+        const { error: err } = await supabase.from('list_items').insert({
+          id: snap.id,
+          list_id: snap.list_id,
+          text: snap.text,
+          quantity: snap.quantity,
+          unit: snap.unit,
+          checked: snap.checked,
+          position: snap.position,
+          category_key: snap.category_key,
+          created_by: snap.created_by,
+        })
+        if (err) throw err
+      },
+    })
+    await refreshAll()
+  }
+
+  async function toggleItem(id: string, checked: boolean) {
+    if (!listId) return
+    const current = items.find((i) => i.id === id)
+    if (!current) return
+    const fp = fingerprintFromText(current.text)
+    const completedPositions = completedSorted.filter((i) => i.id !== id).map((i) => i.position)
+    const activePositions = activeSorted.filter((i) => i.id !== id).map((i) => i.position)
+    const position = checked ? keyAfterLast(completedPositions) : keyAfterLast(activePositions)
+    const prev = { checked: current.checked, position: current.position }
+    await push({
+      apply: async () => {
+        const { error: err } = await supabase
+          .from('list_items')
+          .update({ checked, position })
+          .eq('id', id)
+        if (err) throw err
+        if (checked) {
+          await logListItemEvent(supabase, {
+            listId,
+            itemId: id,
+            eventType: 'item_checked',
+            fingerprint: fp,
+            payload: {
+              text: current.text,
+              quantity: current.quantity,
+              unit: current.unit,
+              checked: true,
+            },
+          })
+        } else {
+          await logListItemEvent(supabase, {
+            listId,
+            itemId: id,
+            eventType: 'item_unchecked',
+            fingerprint: fp,
+            payload: { text: current.text },
+          })
+        }
+      },
+      revert: async () => {
+        const { error: err } = await supabase
+          .from('list_items')
+          .update({ checked: prev.checked, position: prev.position })
+          .eq('id', id)
+        if (err) throw err
+      },
+    })
+    await refreshAll()
+  }
+
+  async function changeQuantity(id: string, quantity: number) {
+    if (!listId || !Number.isFinite(quantity) || quantity <= 0) return
+    const current = items.find((i) => i.id === id)
+    if (!current) return
+    const fp = fingerprintFromText(current.text)
+    const prevQty = current.quantity
+    await push({
+      apply: async () => {
+        const { error: err } = await supabase.from('list_items').update({ quantity }).eq('id', id)
+        if (err) throw err
+        await logListItemEvent(supabase, {
+          listId,
+          itemId: id,
+          eventType: 'quantity_changed',
+          fingerprint: fp,
+          payload: { from: prevQty, to: quantity, unit: current.unit, text: current.text },
+        })
+      },
+      revert: async () => {
+        const { error: err } = await supabase.from('list_items').update({ quantity: prevQty }).eq('id', id)
+        if (err) throw err
+      },
+    })
+    await refreshAll()
+  }
+
+  async function createInvite() {
+    if (!listId) return
+    setError(null)
+    const { data, error: err } = await supabase.from('list_invites').insert({ list_id: listId }).select('token').single()
+    if (err) {
+      setError(err.message)
+      return
+    }
+    const url = `${window.location.origin}/invite/${data.token}`
+    setInviteUrl(url)
+    try {
+      await navigator.clipboard.writeText(url)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function addSuggestion(s: (typeof suggestions)[number]) {
+    const match = items.find((i) => !i.checked && fingerprintFromText(i.text) === s.fingerprint)
+    if (match) {
+      const nextQty = Math.round((match.quantity + s.suggestedQty) * 10) / 10
+      await changeQuantity(match.id, nextQty)
+      return
+    }
+    await insertItem(s.displayText, s.suggestedQty, s.unit)
+  }
+
+  const groupedBuckets = useMemo(() => {
+    const buckets: Record<string, ListItemRow[]> = {}
+    for (const k of categoryWalkOrder) buckets[k] = []
+    const misc = 'miscellaneous'
+    if (!buckets[misc]) buckets[misc] = []
+    for (const item of activeSorted) {
+      const k = inferCategoryKey(item.text, item.category_key)
+      const target = buckets[k] ? k : misc
+      buckets[target]!.push(item)
+    }
+    return { buckets }
+  }, [activeSorted, categoryWalkOrder])
+
+  if (!listId) {
+    return <p className="p-4 text-sm text-slate-600">Missing list id.</p>
+  }
+
+  return (
+    <div className="mx-auto flex min-h-full max-w-lg flex-col px-2 pb-24 pt-2 sm:px-3 sm:pb-28 sm:pt-3">
+      <header className="mb-2 flex flex-col gap-1.5 sm:mb-3 sm:gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <Link to="/" className="text-sm text-teal-800 underline dark:text-teal-300">
+            All lists
+          </Link>
+          <div ref={actionsMenuRef} className="relative flex items-center gap-1">
+            <button
+              type="button"
+              disabled={!canUndo}
+              onClick={() => void undo().then(() => refreshAll())}
+              className="grid h-8 w-8 place-items-center rounded-[6px] border border-slate-200 text-base font-semibold disabled:opacity-40 dark:border-slate-600"
+              aria-label="Undo"
+              title="Undo"
+            >
+              ↶
+            </button>
+            <button
+              type="button"
+              disabled={!canRedo}
+              onClick={() => void redo().then(() => refreshAll())}
+              className="grid h-8 w-8 place-items-center rounded-[6px] border border-slate-200 text-base font-semibold disabled:opacity-40 dark:border-slate-600"
+              aria-label="Redo"
+              title="Redo"
+            >
+              ↷
+            </button>
+            <button
+              type="button"
+              className="grid h-8 w-8 place-items-center rounded-[6px] border border-slate-200 text-base font-semibold dark:border-slate-600"
+              onClick={() => setActionsOpen((v) => !v)}
+              aria-label="More actions"
+              title="More actions"
+            >
+              …
+            </button>
+            {actionsOpen ? (
+              <div className="absolute right-0 top-9 z-20 w-56 rounded-[6px] border border-slate-200 bg-white p-2 text-xs shadow-md dark:border-slate-700 dark:bg-slate-900">
+                <label className="mb-2 flex flex-col gap-1 text-slate-600 dark:text-slate-300">
+                  Store layout
+                  <select
+                    className="rounded-[6px] border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-900"
+                    value={list?.store_preset_id ?? ''}
+                    onChange={(e) => void persistPreset(e.target.value || null)}
+                  >
+                    {presets.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="mb-1 block w-full rounded-[6px] px-2 py-1 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
+                  onClick={() => {
+                    setActionsOpen(false)
+                    setCatOpen(true)
+                  }}
+                >
+                  Aisle order
+                </button>
+                <button
+                  type="button"
+                  className="block w-full rounded-[6px] px-2 py-1 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
+                  onClick={() => {
+                    setActionsOpen(false)
+                    void createInvite()
+                  }}
+                >
+                  Invite collaborator
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <input
+          className="w-full rounded-[6px] border border-transparent bg-transparent px-3 py-2 text-lg font-semibold outline-none focus:border-slate-300 focus:bg-white dark:focus:border-slate-600 dark:focus:bg-slate-900"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onBlur={() => void persistTitle(title)}
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-[6px] border border-slate-200 p-0.5 text-xs dark:border-slate-600">
+            <button
+              type="button"
+              className={`rounded-[6px] px-3 py-1 ${view === 'flat' ? 'bg-teal-700 text-white' : ''}`}
+              onClick={() => setView('flat')}
+            >
+              Flat
+            </button>
+            <button
+              type="button"
+              className={`rounded-[6px] px-3 py-1 ${view === 'grouped' ? 'bg-teal-700 text-white' : ''}`}
+              onClick={() => setView('grouped')}
+            >
+              Grouped
+            </button>
+          </div>
+          <button
+            type="button"
+            className="rounded-[6px] bg-teal-700 px-3 py-1 text-xs font-semibold text-white"
+            onClick={() => setRecOpen(true)}
+          >
+            Recommended
+          </button>
+        </div>
+        {inviteUrl && (
+          <p className="rounded-lg bg-teal-50 px-2 py-1 text-xs text-teal-900 dark:bg-teal-950 dark:text-teal-100">
+            Invite link copied (if permitted): {inviteUrl}
+          </p>
+        )}
+        {error && (
+          <p className="rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-100">
+            {error}
+          </p>
+        )}
+      </header>
+
+      {view === 'flat' ? (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => void onDragEnd(e)}>
+          <section>
+            <SortableContext items={activeSorted.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+              <ul className="flex flex-col gap-1.5 sm:gap-2">
+                {activeSorted.map((item) => (
+                  <SortableItem
+                    key={item.id}
+                    item={item}
+                    onToggle={(id, c) => void toggleItem(id, c)}
+                    onDelete={(id) => void deleteItem(id)}
+                    onQuantityChange={(id, q) => void changeQuantity(id, q)}
+                  />
+                ))}
+              </ul>
+            </SortableContext>
+          </section>
+          <section className="mt-6">
+            <h2 className="mb-2 text-sm font-semibold text-slate-500">Completed</h2>
+            <SortableContext items={completedSorted.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+              <ul className="flex flex-col gap-1.5 sm:gap-2">
+                {completedSorted.map((item) => (
+                  <SortableItem
+                    key={item.id}
+                    item={item}
+                    onToggle={(id, c) => void toggleItem(id, c)}
+                    onDelete={(id) => void deleteItem(id)}
+                    onQuantityChange={(id, q) => void changeQuantity(id, q)}
+                  />
+                ))}
+              </ul>
+            </SortableContext>
+          </section>
+        </DndContext>
+      ) : (
+        <div className="flex flex-col gap-3 sm:gap-4">
+          {categoryWalkOrder.map((key) => {
+            const rows = groupedBuckets.buckets[key] ?? []
+            if (!rows.length) return null
+            return (
+              <section key={key}>
+                <h3 className="mb-2 text-xs font-semibold text-slate-500">
+                  {categoryLabel(key)}
+                </h3>
+                <ul className="flex flex-col gap-1.5 sm:gap-2">
+                  {rows.map((item) => (
+                    <SortableItem
+                      key={item.id}
+                      item={item}
+                      disabled
+                      showDragHandle={false}
+                      onToggle={(id, c) => void toggleItem(id, c)}
+                      onDelete={(id) => void deleteItem(id)}
+                      onQuantityChange={(id, q) => void changeQuantity(id, q)}
+                    />
+                  ))}
+                </ul>
+              </section>
+            )
+          })}
+          <section>
+            <h2 className="mb-2 text-sm font-semibold text-slate-500">Completed</h2>
+            <ul className="flex flex-col gap-1.5 sm:gap-2">
+              {completedSorted.map((item) => (
+                <SortableItem
+                  key={item.id}
+                  item={item}
+                  disabled
+                  showDragHandle={false}
+                  onToggle={(id, c) => void toggleItem(id, c)}
+                  onDelete={(id) => void deleteItem(id)}
+                  onQuantityChange={(id, q) => void changeQuantity(id, q)}
+                />
+              ))}
+            </ul>
+          </section>
+        </div>
+      )}
+
+      <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-slate-200 bg-white/95 px-2 py-2 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 sm:px-3 sm:py-3">
+        <div className="mx-auto flex max-w-lg flex-col gap-1.5 sm:gap-2">
+          <div className="flex gap-1.5 sm:gap-2">
+            <input
+              className="flex-1 rounded-[6px] border border-slate-200 bg-white px-3 py-2 text-base dark:border-slate-600 dark:bg-slate-950"
+              placeholder="Add item"
+              value={newText}
+              onChange={(e) => setNewText(e.target.value)}
+            />
+            <input
+              type="number"
+              min={0.1}
+              step={0.1}
+              className="w-20 rounded-[6px] border border-slate-200 bg-white px-2 py-2 text-right text-sm dark:border-slate-600 dark:bg-slate-950"
+              value={newQty}
+              onChange={(e) => setNewQty(Number(e.target.value))}
+            />
+            <select
+              className="w-24 rounded-[6px] border border-slate-200 bg-white px-1 text-sm dark:border-slate-600 dark:bg-slate-950"
+              value={newUnit}
+              onChange={(e) => setNewUnit(e.target.value)}
+            >
+              <option value="each">each</option>
+              <option value="L">L</option>
+              <option value="kg">kg</option>
+            </select>
+          </div>
+          <button
+            type="button"
+            className="w-full rounded-[6px] bg-teal-700 py-3 text-sm font-semibold text-white"
+            onClick={() => void addItem()}
+          >
+            Add to list
+          </button>
+        </div>
+      </div>
+
+      <RecommendationsDrawer
+        open={recOpen}
+        onClose={() => setRecOpen(false)}
+        suggestions={suggestions}
+        onAdd={(s) => void addSuggestion(s)}
+      />
+
+      {catOpen && (
+        <CategoryOrderModal
+          initialOrder={categoryWalkOrder}
+          onClose={() => setCatOpen(false)}
+          onSave={async (order) => {
+            if (!list?.store_preset_id) {
+              setError('Select a store layout first.')
+              return
+            }
+            const { error: err } = await supabase.rpc('save_store_preset_order', {
+              target_preset_id: list.store_preset_id,
+              ordered_categories: order,
+            })
+            if (err) {
+              setError(err.message)
+              return
+            }
+            setPresetCats((prev) => {
+              const remaining = prev.filter((r) => r.preset_id !== list.store_preset_id)
+              const nextRows = order.map((categoryKey, idx) => ({
+                id: `local-${idx}-${categoryKey}`,
+                preset_id: list.store_preset_id as string,
+                category_key: categoryKey,
+                sort_index: idx,
+              }))
+              return [...remaining, ...nextRows]
+            })
+          }}
+        />
+      )}
+    </div>
+  )
+}

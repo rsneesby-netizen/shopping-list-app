@@ -1,0 +1,298 @@
+{
+  "categories": [
+    {
+      "key": "fruit_veg",
+      "label": "Fruit & vegetables",
+      "keywords": [
+        "apple",
+        "banana",
+        "orange",
+        "lettuce",
+        "spinach",
+        "tomato",
+        "potato",
+        "onion",
+        "carrot",
+        "broccoli",
+        "cucumber",
+        "avocado",
+        "berry",
+        "grape",
+        "melon",
+        "mango",
+        "pear",
+        "peach",
+        "plum",
+        "kiwi",
+        "lemon",
+        "lime",
+        "garlic",
+        "ginger",
+        "herb",
+        "parsley",
+        "coriander",
+        "cilantro",
+        "capsicum",
+        "pepper",
+        "zucchini",
+        "eggplant",
+        "aubergine",
+        "mushroom",
+        "celery",
+        "asparagus",
+        "corn",
+        "pumpkin",
+        "salad",
+        "fruit",
+        "vegetable"
+      ]
+    },
+    {
+      "key": "bakery",
+      "label": "Bakery",
+      "keywords": [
+        "bread",
+        "roll",
+        "bun",
+        "bagel",
+        "croissant",
+        "muffin",
+        "cake",
+        "pastry",
+        "wrap",
+        "tortilla",
+        "pita",
+        "baguette",
+        "sourdough",
+        "donut",
+        "doughnut",
+        "biscuit",
+        "cookie"
+      ]
+    },
+    {
+      "key": "deli",
+      "label": "Deli",
+      "keywords": [
+        "ham",
+        "salami",
+        "prosciutto",
+        "olive",
+        "antipasto",
+        "dip",
+        "hummus",
+        "cheese slice",
+        "cold cut",
+        "deli"
+      ]
+    },
+    {
+      "key": "meat_poultry",
+      "label": "Meat & poultry",
+      "keywords": [
+        "chicken",
+        "beef",
+        "pork",
+        "lamb",
+        "mince",
+        "steak",
+        "sausage",
+        "bacon",
+        "turkey",
+        "duck",
+        "ribs",
+        "roast",
+        "meat",
+        "poultry"
+      ]
+    },
+    {
+      "key": "seafood",
+      "label": "Seafood",
+      "keywords": [
+        "fish",
+        "salmon",
+        "tuna",
+        "prawn",
+        "shrimp",
+        "crab",
+        "lobster",
+        "mussel",
+        "oyster",
+        "squid",
+        "calamari",
+        "seafood"
+      ]
+    },
+    {
+      "key": "dairy",
+      "label": "Dairy",
+      "keywords": [
+        "milk",
+        "cream",
+        "butter",
+        "yoghurt",
+        "yogurt",
+        "cheese",
+        "custard",
+        "sour cream",
+        "cottage cheese",
+        "ricotta",
+        "feta",
+        "cheddar",
+        "mozzarella",
+        "parmesan",
+        "dairy"
+      ]
+    },
+    {
+      "key": "frozen",
+      "label": "Freezer",
+      "keywords": [
+        "frozen",
+        "ice cream",
+        "chips",
+        "fries",
+        "peas",
+        "mixed veg",
+        "frozen meal",
+        "pizza frozen"
+      ]
+    },
+    {
+      "key": "pantry",
+      "label": "Pantry",
+      "keywords": [
+        "rice",
+        "pasta",
+        "noodle",
+        "flour",
+        "sugar",
+        "oil",
+        "vinegar",
+        "sauce",
+        "stock",
+        "spice",
+        "salt",
+        "pepper",
+        "cereal",
+        "oat",
+        "honey",
+        "jam",
+        "peanut butter",
+        "tinned",
+        "canned",
+        "beans",
+        "lentil",
+        "quinoa",
+        "couscous",
+        "baking"
+      ]
+    },
+    {
+      "key": "drinks",
+      "label": "Drinks",
+      "keywords": [
+        "water",
+        "juice",
+        "soft drink",
+        "soda",
+        "cola",
+        "coffee",
+        "tea",
+        "wine",
+        "beer",
+        "sparkling",
+        "energy drink",
+        "drink"
+      ]
+    },
+    {
+      "key": "snacks",
+      "label": "Snacks",
+      "keywords": [
+        "chocolate",
+        "lollies",
+        "candy",
+        "crisp",
+        "chip",
+        "popcorn",
+        "nut",
+        "almond",
+        "snack",
+        "bar"
+      ]
+    },
+    {
+      "key": "household",
+      "label": "Household",
+      "keywords": [
+        "paper towel",
+        "toilet",
+        "tissue",
+        "cleaner",
+        "detergent",
+        "soap",
+        "sponge",
+        "bin bag",
+        "garbage bag",
+        "foil",
+        "wrap",
+        "battery",
+        "laundry",
+        "dishwasher",
+        "bleach"
+      ]
+    },
+    {
+      "key": "health_beauty",
+      "label": "Health & beauty",
+      "keywords": [
+        "shampoo",
+        "conditioner",
+        "toothpaste",
+        "deodorant",
+        "razor",
+        "vitamin",
+        "medicine",
+        "panadol",
+        "nurofen",
+        "bandage",
+        "sunscreen",
+        "moisturiser",
+        "lotion"
+      ]
+    },
+    {
+      "key": "baby",
+      "label": "Baby",
+      "keywords": [
+        "nappy",
+        "diaper",
+        "wipe",
+        "formula",
+        "baby food",
+        "dummy",
+        "pacifier"
+      ]
+    },
+    {
+      "key": "pet",
+      "label": "Pet",
+      "keywords": [
+        "dog food",
+        "cat food",
+        "pet",
+        "kitten",
+        "puppy",
+        "litter",
+        "treat"
+      ]
+    },
+    {
+      "key": "miscellaneous",
+      "label": "Miscellaneous",
+      "keywords": []
+    }
+  ]
+}
