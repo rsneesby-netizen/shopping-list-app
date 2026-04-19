@@ -26,6 +26,7 @@ import type { ListItemEventRow, ListItemRow, ListRow, StorePresetCategoryRow, St
 import { CategoryOrderModal } from './CategoryOrderModal'
 import { RecommendationsDrawer } from './RecommendationsDrawer'
 import { SortableItem } from './SortableItem'
+import { ToolbarIconMore, ToolbarIconRedo, ToolbarIconUndo } from './toolbarIcons'
 
 export function ListPage() {
   const { listId } = useParams()
@@ -459,30 +460,30 @@ export function ListPage() {
               type="button"
               disabled={!canUndo}
               onClick={() => void undo().then(() => refreshAll())}
-              className="grid h-8 w-8 place-items-center rounded-[6px] border border-slate-200 text-base font-semibold disabled:opacity-40 dark:border-slate-600"
+              className="grid h-8 w-8 place-items-center rounded-[6px] border border-slate-200 text-slate-700 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200"
               aria-label="Undo"
               title="Undo"
             >
-              ↶
+              <ToolbarIconUndo className="h-6 w-6 shrink-0" />
             </button>
             <button
               type="button"
               disabled={!canRedo}
               onClick={() => void redo().then(() => refreshAll())}
-              className="grid h-8 w-8 place-items-center rounded-[6px] border border-slate-200 text-base font-semibold disabled:opacity-40 dark:border-slate-600"
+              className="grid h-8 w-8 place-items-center rounded-[6px] border border-slate-200 text-slate-700 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200"
               aria-label="Redo"
               title="Redo"
             >
-              ↷
+              <ToolbarIconRedo className="h-6 w-6 shrink-0" />
             </button>
             <button
               type="button"
-              className="grid h-8 w-8 place-items-center rounded-[6px] border border-slate-200 text-base font-semibold dark:border-slate-600"
+              className="grid h-8 w-8 place-items-center rounded-[6px] border border-slate-200 text-slate-700 dark:border-slate-600 dark:text-slate-200"
               onClick={() => setActionsOpen((v) => !v)}
               aria-label="More actions"
               title="More actions"
             >
-              …
+              <ToolbarIconMore className="h-6 w-6 shrink-0" />
             </button>
             {actionsOpen ? (
               <div className="absolute right-0 top-9 z-20 w-56 rounded-[6px] border border-slate-200 bg-white p-2 text-xs shadow-md dark:border-slate-700 dark:bg-slate-900">
