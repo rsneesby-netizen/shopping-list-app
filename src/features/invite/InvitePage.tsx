@@ -16,10 +16,7 @@ function InviteAcceptContent({ token }: { token: string }) {
           data: { session },
         } = await supabase.auth.getSession()
         if (!session) {
-          if (!cancelled) {
-            setStatus('error')
-            setMessage('Sign in first, then open this invite link again.')
-          }
+          navigate(`/login?next=${encodeURIComponent(`/invite/${token}`)}`, { replace: true })
           return
         }
         const { data, error } = await supabase.rpc('accept_list_invite', { invite_token: token })

@@ -1,7 +1,10 @@
 import { useState, type FormEvent } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { getSupabase } from '../../lib/supabase'
 
 export function AuthPage() {
+  const navigate = useNavigate()
+  const [params] = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
@@ -21,6 +24,8 @@ export function AuthPage() {
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) throw error
+        const next = params.get('next')
+        navigate(next && next.startsWith('/') ? next : '/', { replace: true })
       }
     } catch (err: unknown) {
       setMessage(err instanceof Error ? err.message : 'Authentication failed')
