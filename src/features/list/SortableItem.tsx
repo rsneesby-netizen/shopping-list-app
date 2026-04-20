@@ -1,22 +1,34 @@
+import { useEffect, useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import {
+  formatQuantityForInput,
+  normalizeUnit,
+  parseQuantityInput,
+  unitOptionLabel,
+  UNIT_OPTIONS,
+} from '../../lib/units'
 import type { ListItemRow } from '../../types'
 import { ItemDeleteIcon } from './listIcons'
 
 const EACH_QUANTITY_OPTIONS = Array.from({ length: 20 }, (_, i) => i + 1)
 
-const controlFieldClass =
-  'min-h-8 rounded-[6px] border border-slate-200 bg-white px-1 text-right text-xs sm:text-sm dark:border-slate-600 dark:bg-slate-950'
+/** 32×32 quantity control, subtle border at rest */
+const qtyBoxClass =
+  'box-border h-8 w-8 shrink-0 rounded border border-slate-200/80 bg-white text-center text-xs tabular-nums text-slate-700 outline-none focus:border-slate-400 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-500'
+
+const noChevron =
+  'appearance-none bg-[length:0] [background-image:none] [&::-webkit-appearance]:none'
 
 type Props = {
   item: ListItemRow
   disabled?: boolean
   showDragHandle?: boolean
-  /** Rows inside a grouped category card (shared white background on parent) */
   inGroupedBlock?: boolean
   onToggle: (id: string, checked: boolean) => void
   onDelete: (id: string) => void
   onQuantityChange: (id: string, quantity: number) => void
+  onUnitChange: (id: string, unit: string) => void
 }
 
 function eachQuantityValue(q: number) {
@@ -32,7 +44,17 @@ export function SortableItem({
   onToggle,
   onDelete,
   onQuantityChange,
+  onUnitChange,
 }: Props) {
+  const unit = normalizeUnit(item.unit)
+  const isEach = unit === 'each'
+
+  const [qtyText, setQtyText] = useState(() => formatQuantityForInput(unit, item.quantity))
+
+  useEffect(() => {
+    setQtyText(formatQuantityForInput(unit, item.quantity))
+  }, [item.id, item.quantity, item.unit, unit])
+
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.id,
     disabled,
@@ -44,7 +66,17 @@ export function SortableItem({
     opacity: isDragging ? 0.7 : 1,
   }
 
-  const isEach = item.unit === 'each'
+  function commitQtyText() {
+    const parsed = parseQuantityInput(unit, qtyText)
+    if (parsed !== null) {
+      onQuantityChange(item.id, parsed)
+    } else {
+      setQtyText(formatQuantityForInput(unit, item.quantity))
+    }
+  }
+
+  const unitSelectClass =
+    `${noChevron} shrink-0 cursor-pointer border-0 bg-transparent p-0 text-[10px] leading-tight text-slate-500 outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 dark:text-slate-400`
 
   return (
     <li
@@ -84,7 +116,7 @@ export function SortableItem({
           <select
             value={eachQuantityValue(item.quantity)}
             onChange={(e) => onQuantityChange(item.id, Number(e.target.value))}
-            className={`${controlFieldClass} w-14 sm:w-16`}
+            className={`${qtyBoxClass} ${noChevron} px-0.5`}
             aria-label="Quantity"
           >
             {EACH_QUANTITY_OPTIONS.map((n) => (
@@ -95,15 +127,30 @@ export function SortableItem({
           </select>
         ) : (
           <input
-            type="number"
-            min={0.1}
-            step={0.1}
-            value={item.quantity}
-            onChange={(e) => onQuantityChange(item.id, Number(e.target.value))}
-            className={`${controlFieldClass} w-14 sm:w-16`}
+            type="text"
+            inputMode="decimal"
+            value={qtyText}
+            onChange={(e) => setQtyText(e.target.value)}
+            onBlur={() => commitQtyText()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+            }}
+            className={`${qtyBoxClass} [appearance:textfield] px-0.5 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+            aria-label="Quantity"
           />
         )}
-        <span className="w-8 text-[10px] text-slate-500 sm:w-10 sm:text-xs">{item.unit}</span>
+        <select
+          value={unit}
+          onChange={(e) => onUnitChange(item.id, normalizeUnit(e.target.value))}
+          className={unitSelectClass}
+          aria-label="Quantity type"
+        >
+          {UNIT_OPTIONS.map((u) => (
+            <option key={u} value={u}>
+              {unitOptionLabel(u)}
+            </option>
+          ))}
+        </select>
       </div>
       <button
         type="button"

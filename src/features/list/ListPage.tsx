@@ -21,6 +21,15 @@ import {
   pickDefaultStoreLayoutId,
   rememberLastStoreLayoutId,
 } from '../../lib/storeLayouts'
+import {
+  clampQuantityForUnit,
+  formatQuantityForInput,
+  normalizeUnit,
+  parseQuantityInput,
+  quantityWhenChangingUnit,
+  unitOptionLabel,
+  UNIT_OPTIONS,
+} from '../../lib/units'
 import { getSupabase } from '../../lib/supabase'
 import type { ListItemEventRow, ListItemRow, ListRow, StorePresetCategoryRow, StorePresetRow } from '../../types'
 import { CategoryOrderModal } from './CategoryOrderModal'
@@ -44,6 +53,8 @@ export function ListPage() {
   const [title, setTitle] = useState('')
   const [newText, setNewText] = useState('')
   const [newQty, setNewQty] = useState(1)
+  /** Text field for L / g quantity in add bar (validates on blur / add) */
+  const [newQtyText, setNewQtyText] = useState('1')
   const [newUnit, setNewUnit] = useState('each')
   const [view, setView] = useState<'flat' | 'grouped'>('flat')
   const [recOpen, setRecOpen] = useState(false)
@@ -218,6 +229,9 @@ export function ListPage() {
     if (!listId) return
     const trimmed = text.trim()
     if (!trimmed) return
+    const u = normalizeUnit(unit)
+    const q = clampQuantityForUnit(u, qty)
+    if (q === null) return
     const fp = fingerprintFromText(trimmed)
     const cat = inferCategoryKey(trimmed, null)
     const activePositions = sortByPosition(items.filter((i) => !i.checked)).map((i) => i.position)
@@ -231,8 +245,8 @@ export function ListPage() {
           .insert({
             list_id: listId,
             text: trimmed,
-            quantity: qty,
-            unit,
+            quantity: q,
+            unit: u,
             checked: false,
             position,
             category_key: cat,
@@ -246,7 +260,7 @@ export function ListPage() {
           itemId: data.id,
           eventType: 'item_added',
           fingerprint: fp,
-          payload: { text: trimmed, quantity: qty, unit },
+          payload: { text: trimmed, quantity: q, unit: u },
         })
       },
       revert: async () => {
@@ -292,10 +306,25 @@ export function ListPage() {
   }
 
   async function addItem() {
-    await insertItem(newText, newQty, newUnit)
+    const u = normalizeUnit(newUnit)
+    let qty: number
+    if (u === 'each') {
+      qty = clampQuantityForUnit('each', newQty) ?? 1
+    } else {
+      const p = parseQuantityInput(u, newQtyText)
+      if (p === null) {
+        setError('Enter a valid quantity.')
+        setNewQtyText(formatQuantityForInput(u, newQty))
+        return
+      }
+      qty = p
+    }
+    await insertItem(newText, qty, u)
     setNewText('')
     setNewQty(1)
+    setNewQtyText('1')
     setNewUnit('each')
+    setError(null)
   }
 
   async function deleteItem(id: string) {
@@ -384,25 +413,66 @@ export function ListPage() {
   }
 
   async function changeQuantity(id: string, quantity: number) {
-    if (!listId || !Number.isFinite(quantity) || quantity <= 0) return
+    if (!listId) return
     const current = items.find((i) => i.id === id)
     if (!current) return
     const fp = fingerprintFromText(current.text)
     const prevQty = current.quantity
+
+    const u = normalizeUnit(current.unit)
+    const q = clampQuantityForUnit(u, quantity)
+    if (q === null) return
     await push({
       apply: async () => {
-        const { error: err } = await supabase.from('list_items').update({ quantity }).eq('id', id)
+        const { error: err } = await supabase.from('list_items').update({ quantity: q }).eq('id', id)
         if (err) throw err
         await logListItemEvent(supabase, {
           listId,
           itemId: id,
           eventType: 'quantity_changed',
           fingerprint: fp,
-          payload: { from: prevQty, to: quantity, unit: current.unit, text: current.text },
+          payload: { from: prevQty, to: q, unit: current.unit, text: current.text },
         })
       },
       revert: async () => {
         const { error: err } = await supabase.from('list_items').update({ quantity: prevQty }).eq('id', id)
+        if (err) throw err
+      },
+    })
+    await refreshAll()
+  }
+
+  async function changeUnit(id: string, nextUnit: string) {
+    const allowed = new Set(['each', 'L', 'kg'])
+    const nu = normalizeUnit(nextUnit)
+    if (!listId || !allowed.has(nu)) return
+    const current = items.find((i) => i.id === id)
+    if (!current) return
+    if (current.unit === nu) return
+    const fp = fingerprintFromText(current.text)
+    const prevUnit = current.unit
+    const nextQty = quantityWhenChangingUnit(prevUnit, nu, current.quantity)
+    const prevQty = current.quantity
+    await push({
+      apply: async () => {
+        const { error: err } = await supabase
+          .from('list_items')
+          .update({ unit: nu, quantity: nextQty })
+          .eq('id', id)
+        if (err) throw err
+        await logListItemEvent(supabase, {
+          listId,
+          itemId: id,
+          eventType: 'unit_changed',
+          fingerprint: fp,
+          payload: { from: prevUnit, to: nu, quantity: nextQty, prevQuantity: prevQty, text: current.text },
+        })
+      },
+      revert: async () => {
+        const { error: err } = await supabase
+          .from('list_items')
+          .update({ unit: prevUnit, quantity: prevQty })
+          .eq('id', id)
         if (err) throw err
       },
     })
@@ -594,6 +664,7 @@ export function ListPage() {
                     onToggle={(id, c) => void toggleItem(id, c)}
                     onDelete={(id) => void deleteItem(id)}
                     onQuantityChange={(id, q) => void changeQuantity(id, q)}
+                    onUnitChange={(id, u) => void changeUnit(id, u)}
                   />
                 ))}
               </ul>
@@ -610,6 +681,7 @@ export function ListPage() {
                     onToggle={(id, c) => void toggleItem(id, c)}
                     onDelete={(id) => void deleteItem(id)}
                     onQuantityChange={(id, q) => void changeQuantity(id, q)}
+                    onUnitChange={(id, u) => void changeUnit(id, u)}
                   />
                 ))}
               </ul>
@@ -657,6 +729,7 @@ export function ListPage() {
                         onToggle={(id, c) => void toggleItem(id, c)}
                         onDelete={(id) => void deleteItem(id)}
                         onQuantityChange={(id, q) => void changeQuantity(id, q)}
+                        onUnitChange={(id, u) => void changeUnit(id, u)}
                       />
                     ))}
                   </ul>
@@ -678,6 +751,7 @@ export function ListPage() {
                     onToggle={(id, c) => void toggleItem(id, c)}
                     onDelete={(id) => void deleteItem(id)}
                     onQuantityChange={(id, q) => void changeQuantity(id, q)}
+                    onUnitChange={(id, u) => void changeUnit(id, u)}
                   />
                 ))}
               </ul>
@@ -697,9 +771,13 @@ export function ListPage() {
             />
             {newUnit === 'each' ? (
               <select
-                className="min-h-8 w-20 rounded-[6px] border border-slate-200 bg-white px-2 text-right text-sm dark:border-slate-600 dark:bg-slate-950"
+                className="min-h-8 w-20 appearance-none rounded-[6px] border border-slate-200 bg-white bg-[length:0] px-2 text-right text-sm [background-image:none] dark:border-slate-600 dark:bg-slate-950 [&::-webkit-appearance]:none"
                 value={Math.min(20, Math.max(1, Math.round(Number(newQty)) || 1))}
-                onChange={(e) => setNewQty(Number(e.target.value))}
+                onChange={(e) => {
+                  const v = Number(e.target.value)
+                  setNewQty(v)
+                  setNewQtyText(String(v))
+                }}
                 aria-label="Quantity"
               >
                 {ADD_EACH_QTY_OPTIONS.map((n) => (
@@ -710,26 +788,42 @@ export function ListPage() {
               </select>
             ) : (
               <input
-                type="number"
-                min={0.1}
-                step={0.1}
+                type="text"
+                inputMode="decimal"
                 className="min-h-8 w-20 rounded-[6px] border border-slate-200 bg-white px-2 py-2 text-right text-sm dark:border-slate-600 dark:bg-slate-950"
-                value={newQty}
-                onChange={(e) => setNewQty(Number(e.target.value))}
+                value={newQtyText}
+                onChange={(e) => setNewQtyText(e.target.value)}
+                onBlur={() => {
+                  const p = parseQuantityInput(newUnit, newQtyText)
+                  if (p !== null) {
+                    setNewQty(p)
+                    setNewQtyText(formatQuantityForInput(newUnit, p))
+                  } else {
+                    setNewQtyText(formatQuantityForInput(newUnit, newQty))
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                }}
+                aria-label="Quantity"
               />
             )}
             <select
-              className="min-h-8 w-24 rounded-[6px] border border-slate-200 bg-white px-1 text-sm dark:border-slate-600 dark:bg-slate-950"
-              value={newUnit}
+              className="min-h-8 w-28 appearance-none rounded-[6px] border border-slate-200 bg-white bg-[length:0] px-1 text-sm [background-image:none] dark:border-slate-600 dark:bg-slate-950 [&::-webkit-appearance]:none"
+              value={normalizeUnit(newUnit)}
               onChange={(e) => {
-                const u = e.target.value
+                const u = normalizeUnit(e.target.value)
+                const bridged = quantityWhenChangingUnit(newUnit, u, newQty)
                 setNewUnit(u)
-                if (u === 'each') setNewQty((q) => Math.min(20, Math.max(1, Math.round(Number(q)) || 1)))
+                setNewQty(bridged)
+                setNewQtyText(formatQuantityForInput(u, bridged))
               }}
             >
-              <option value="each">each</option>
-              <option value="L">L</option>
-              <option value="kg">kg</option>
+              {UNIT_OPTIONS.map((u) => (
+                <option key={u} value={u}>
+                  {unitOptionLabel(u)}
+                </option>
+              ))}
             </select>
           </div>
           <button
