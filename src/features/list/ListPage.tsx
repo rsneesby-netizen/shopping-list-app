@@ -26,7 +26,10 @@ import type { ListItemEventRow, ListItemRow, ListRow, StorePresetCategoryRow, St
 import { CategoryOrderModal } from './CategoryOrderModal'
 import { RecommendationsDrawer } from './RecommendationsDrawer'
 import { SortableItem } from './SortableItem'
+import { BackToListsIcon, GroupCollapseChevronIcon, GroupExpandChevronIcon } from './listIcons'
 import { ToolbarIconMore, ToolbarIconRedo, ToolbarIconUndo } from './toolbarIcons'
+
+const ADD_EACH_QTY_OPTIONS = Array.from({ length: 20 }, (_, i) => i + 1)
 
 export function ListPage() {
   const { listId } = useParams()
@@ -48,6 +51,8 @@ export function ListPage() {
   const [actionsOpen, setActionsOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [inviteUrl, setInviteUrl] = useState<string | null>(null)
+  /** When true, category group body is hidden */
+  const [collapsedCategoryKeys, setCollapsedCategoryKeys] = useState<Record<string, boolean>>({})
   const actionsMenuRef = useRef<HTMLDivElement | null>(null)
 
   const sensors = useSensors(
@@ -451,16 +456,31 @@ export function ListPage() {
   return (
     <div className="mx-auto flex min-h-full max-w-lg flex-col px-2 pb-24 pt-2 sm:px-3 sm:pb-28 sm:pt-3">
       <header className="mb-2 flex flex-col gap-1.5 sm:mb-3 sm:gap-2">
-        <div className="flex items-center justify-between gap-2">
-          <Link to="/" className="text-sm text-teal-800 underline dark:text-teal-300">
-            All lists
-          </Link>
-          <div ref={actionsMenuRef} className="relative flex items-center gap-1">
+        <div className="flex min-h-8 items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Link
+              to="/"
+              className="grid h-8 min-h-8 w-8 min-w-8 shrink-0 place-items-center rounded-[6px] border border-slate-200 text-slate-700 dark:border-slate-600 dark:text-slate-200"
+              aria-label="All lists"
+              title="All lists"
+            >
+              <BackToListsIcon className="h-6 w-6 shrink-0" />
+            </Link>
+            <input
+              className="min-w-0 flex-1 rounded-[6px] border border-transparent bg-transparent py-1 text-lg font-semibold leading-tight text-slate-900 outline-none focus:border-slate-300 focus:bg-white dark:text-slate-50 dark:focus:border-slate-600 dark:focus:bg-slate-900"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onBlur={() => void persistTitle(title)}
+              placeholder="List name"
+              aria-label="List name"
+            />
+          </div>
+          <div ref={actionsMenuRef} className="relative flex shrink-0 items-center gap-1">
             <button
               type="button"
               disabled={!canUndo}
               onClick={() => void undo().then(() => refreshAll())}
-              className="grid h-8 w-8 place-items-center rounded-[6px] border border-slate-200 text-slate-700 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200"
+              className="grid h-8 min-h-8 w-8 min-w-8 place-items-center rounded-[6px] border border-slate-200 text-slate-700 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200"
               aria-label="Undo"
               title="Undo"
             >
@@ -470,7 +490,7 @@ export function ListPage() {
               type="button"
               disabled={!canRedo}
               onClick={() => void redo().then(() => refreshAll())}
-              className="grid h-8 w-8 place-items-center rounded-[6px] border border-slate-200 text-slate-700 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200"
+              className="grid h-8 min-h-8 w-8 min-w-8 place-items-center rounded-[6px] border border-slate-200 text-slate-700 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200"
               aria-label="Redo"
               title="Redo"
             >
@@ -478,7 +498,7 @@ export function ListPage() {
             </button>
             <button
               type="button"
-              className="grid h-8 w-8 place-items-center rounded-[6px] border border-slate-200 text-slate-700 dark:border-slate-600 dark:text-slate-200"
+              className="grid h-8 min-h-8 w-8 min-w-8 place-items-center rounded-[6px] border border-slate-200 text-slate-700 dark:border-slate-600 dark:text-slate-200"
               onClick={() => setActionsOpen((v) => !v)}
               aria-label="More actions"
               title="More actions"
@@ -525,24 +545,18 @@ export function ListPage() {
             ) : null}
           </div>
         </div>
-        <input
-          className="w-full rounded-[6px] border border-transparent bg-transparent px-3 py-2 text-lg font-semibold outline-none focus:border-slate-300 focus:bg-white dark:focus:border-slate-600 dark:focus:bg-slate-900"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onBlur={() => void persistTitle(title)}
-        />
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-[6px] border border-slate-200 p-0.5 text-xs dark:border-slate-600">
             <button
               type="button"
-              className={`rounded-[6px] px-3 py-1 ${view === 'flat' ? 'bg-teal-700 text-white' : ''}`}
+              className={`flex min-h-8 items-center rounded-[6px] px-3 ${view === 'flat' ? 'bg-teal-700 text-white' : ''}`}
               onClick={() => setView('flat')}
             >
               Flat
             </button>
             <button
               type="button"
-              className={`rounded-[6px] px-3 py-1 ${view === 'grouped' ? 'bg-teal-700 text-white' : ''}`}
+              className={`flex min-h-8 items-center rounded-[6px] px-3 ${view === 'grouped' ? 'bg-teal-700 text-white' : ''}`}
               onClick={() => setView('grouped')}
             >
               Grouped
@@ -550,7 +564,7 @@ export function ListPage() {
           </div>
           <button
             type="button"
-            className="rounded-[6px] bg-teal-700 px-3 py-1 text-xs font-semibold text-white"
+            className="flex min-h-8 items-center rounded-[6px] bg-teal-700 px-3 text-xs font-semibold text-white"
             onClick={() => setRecOpen(true)}
           >
             Recommended
@@ -607,42 +621,67 @@ export function ListPage() {
           {categoryWalkOrder.map((key) => {
             const rows = groupedBuckets.buckets[key] ?? []
             if (!rows.length) return null
+            const collapsed = !!collapsedCategoryKeys[key]
             return (
-              <section key={key}>
-                <h3 className="mb-2 text-xs font-semibold text-slate-500">
-                  {categoryLabel(key)}
-                </h3>
-                <ul className="flex flex-col gap-1.5 sm:gap-2">
-                  {rows.map((item) => (
-                    <SortableItem
-                      key={item.id}
-                      item={item}
-                      disabled
-                      showDragHandle={false}
-                      onToggle={(id, c) => void toggleItem(id, c)}
-                      onDelete={(id) => void deleteItem(id)}
-                      onQuantityChange={(id, q) => void changeQuantity(id, q)}
-                    />
-                  ))}
-                </ul>
+              <section key={key} className="space-y-1">
+                <div className="flex items-center justify-between gap-2 py-0.5">
+                  <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400">{categoryLabel(key)}</h3>
+                  <button
+                    type="button"
+                    className="grid min-h-8 min-w-8 shrink-0 place-items-center rounded-[6px] text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                    aria-expanded={!collapsed}
+                    aria-label={collapsed ? `Expand ${categoryLabel(key)}` : `Collapse ${categoryLabel(key)}`}
+                    onClick={() =>
+                      setCollapsedCategoryKeys((prev) => ({
+                        ...prev,
+                        [key]: !prev[key],
+                      }))
+                    }
+                  >
+                    {collapsed ? (
+                      <GroupExpandChevronIcon className="h-6 w-6" />
+                    ) : (
+                      <GroupCollapseChevronIcon className="h-6 w-6" />
+                    )}
+                  </button>
+                </div>
+                {collapsed ? null : (
+                  <ul className="flex flex-col gap-0 divide-y divide-slate-200 overflow-hidden rounded-[6px] bg-white dark:divide-slate-700 dark:bg-slate-900">
+                    {rows.map((item) => (
+                      <SortableItem
+                        key={item.id}
+                        item={item}
+                        disabled
+                        inGroupedBlock
+                        showDragHandle={false}
+                        onToggle={(id, c) => void toggleItem(id, c)}
+                        onDelete={(id) => void deleteItem(id)}
+                        onQuantityChange={(id, q) => void changeQuantity(id, q)}
+                      />
+                    ))}
+                  </ul>
+                )}
               </section>
             )
           })}
           <section>
             <h2 className="mb-2 text-sm font-semibold text-slate-500">Completed</h2>
-            <ul className="flex flex-col gap-1.5 sm:gap-2">
-              {completedSorted.map((item) => (
-                <SortableItem
-                  key={item.id}
-                  item={item}
-                  disabled
-                  showDragHandle={false}
-                  onToggle={(id, c) => void toggleItem(id, c)}
-                  onDelete={(id) => void deleteItem(id)}
-                  onQuantityChange={(id, q) => void changeQuantity(id, q)}
-                />
-              ))}
-            </ul>
+            {completedSorted.length ? (
+              <ul className="flex flex-col gap-0 divide-y divide-slate-200 overflow-hidden rounded-[6px] bg-white dark:divide-slate-700 dark:bg-slate-900">
+                {completedSorted.map((item) => (
+                  <SortableItem
+                    key={item.id}
+                    item={item}
+                    disabled
+                    inGroupedBlock
+                    showDragHandle={false}
+                    onToggle={(id, c) => void toggleItem(id, c)}
+                    onDelete={(id) => void deleteItem(id)}
+                    onQuantityChange={(id, q) => void changeQuantity(id, q)}
+                  />
+                ))}
+              </ul>
+            ) : null}
           </section>
         </div>
       )}
@@ -651,23 +690,42 @@ export function ListPage() {
         <div className="mx-auto flex max-w-lg flex-col gap-1.5 sm:gap-2">
           <div className="flex gap-1.5 sm:gap-2">
             <input
-              className="flex-1 rounded-[6px] border border-slate-200 bg-white px-3 py-2 text-base dark:border-slate-600 dark:bg-slate-950"
+              className="min-h-8 flex-1 rounded-[6px] border border-slate-200 bg-white px-3 py-2 text-base dark:border-slate-600 dark:bg-slate-950"
               placeholder="Add item"
               value={newText}
               onChange={(e) => setNewText(e.target.value)}
             />
-            <input
-              type="number"
-              min={0.1}
-              step={0.1}
-              className="w-20 rounded-[6px] border border-slate-200 bg-white px-2 py-2 text-right text-sm dark:border-slate-600 dark:bg-slate-950"
-              value={newQty}
-              onChange={(e) => setNewQty(Number(e.target.value))}
-            />
+            {newUnit === 'each' ? (
+              <select
+                className="min-h-8 w-20 rounded-[6px] border border-slate-200 bg-white px-2 text-right text-sm dark:border-slate-600 dark:bg-slate-950"
+                value={Math.min(20, Math.max(1, Math.round(Number(newQty)) || 1))}
+                onChange={(e) => setNewQty(Number(e.target.value))}
+                aria-label="Quantity"
+              >
+                {ADD_EACH_QTY_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="number"
+                min={0.1}
+                step={0.1}
+                className="min-h-8 w-20 rounded-[6px] border border-slate-200 bg-white px-2 py-2 text-right text-sm dark:border-slate-600 dark:bg-slate-950"
+                value={newQty}
+                onChange={(e) => setNewQty(Number(e.target.value))}
+              />
+            )}
             <select
-              className="w-24 rounded-[6px] border border-slate-200 bg-white px-1 text-sm dark:border-slate-600 dark:bg-slate-950"
+              className="min-h-8 w-24 rounded-[6px] border border-slate-200 bg-white px-1 text-sm dark:border-slate-600 dark:bg-slate-950"
               value={newUnit}
-              onChange={(e) => setNewUnit(e.target.value)}
+              onChange={(e) => {
+                const u = e.target.value
+                setNewUnit(u)
+                if (u === 'each') setNewQty((q) => Math.min(20, Math.max(1, Math.round(Number(q)) || 1)))
+              }}
             >
               <option value="each">each</option>
               <option value="L">L</option>
@@ -676,7 +734,7 @@ export function ListPage() {
           </div>
           <button
             type="button"
-            className="w-full rounded-[6px] bg-teal-700 py-3 text-sm font-semibold text-white"
+            className="min-h-8 w-full rounded-[6px] bg-teal-700 py-3 text-sm font-semibold text-white"
             onClick={() => void addItem()}
           >
             Add to list

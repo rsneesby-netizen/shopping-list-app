@@ -3,19 +3,32 @@ import { CSS } from '@dnd-kit/utilities'
 import type { ListItemRow } from '../../types'
 import { ItemDeleteIcon } from './listIcons'
 
+const EACH_QUANTITY_OPTIONS = Array.from({ length: 20 }, (_, i) => i + 1)
+
+const controlFieldClass =
+  'min-h-8 rounded-[6px] border border-slate-200 bg-white px-1 text-right text-xs sm:text-sm dark:border-slate-600 dark:bg-slate-950'
+
 type Props = {
   item: ListItemRow
   disabled?: boolean
   showDragHandle?: boolean
+  /** Rows inside a grouped category card (shared white background on parent) */
+  inGroupedBlock?: boolean
   onToggle: (id: string, checked: boolean) => void
   onDelete: (id: string) => void
   onQuantityChange: (id: string, quantity: number) => void
+}
+
+function eachQuantityValue(q: number) {
+  const n = Math.round(Number(q))
+  return Math.min(20, Math.max(1, Number.isFinite(n) ? n : 1))
 }
 
 export function SortableItem({
   item,
   disabled,
   showDragHandle = true,
+  inGroupedBlock = false,
   onToggle,
   onDelete,
   onQuantityChange,
@@ -31,16 +44,22 @@ export function SortableItem({
     opacity: isDragging ? 0.7 : 1,
   }
 
+  const isEach = item.unit === 'each'
+
   return (
     <li
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-1.5 rounded-[6px] bg-white px-2 py-1.5 sm:gap-2 sm:px-3 sm:py-2 dark:bg-slate-900"
+      className={
+        inGroupedBlock
+          ? 'flex items-center gap-1.5 rounded-none bg-transparent px-2 py-1.5 sm:gap-2 sm:px-3 sm:py-2 dark:bg-transparent'
+          : 'flex items-center gap-1.5 rounded-[6px] bg-white px-2 py-1.5 sm:gap-2 sm:px-3 sm:py-2 dark:bg-slate-900'
+      }
     >
       {showDragHandle ? (
         <button
           type="button"
-          className="touch-none rounded-[6px] p-1.5 text-slate-400 hover:bg-slate-100 disabled:opacity-30 sm:p-2 dark:hover:bg-slate-800"
+          className="grid min-h-8 min-w-8 touch-none place-items-center rounded-[6px] p-1 text-slate-400 hover:bg-slate-100 disabled:opacity-30 dark:hover:bg-slate-800"
           aria-label="Drag to reorder"
           disabled={disabled}
           {...attributes}
@@ -61,19 +80,34 @@ export function SortableItem({
         </span>
       </label>
       <div className="flex items-center gap-1">
-        <input
-          type="number"
-          min={0.1}
-          step={0.1}
-          value={item.quantity}
-          onChange={(e) => onQuantityChange(item.id, Number(e.target.value))}
-          className="w-14 rounded-[6px] border border-slate-200 bg-white px-1 py-1 text-right text-xs sm:w-16 sm:text-sm dark:border-slate-600 dark:bg-slate-950"
-        />
+        {isEach ? (
+          <select
+            value={eachQuantityValue(item.quantity)}
+            onChange={(e) => onQuantityChange(item.id, Number(e.target.value))}
+            className={`${controlFieldClass} w-14 sm:w-16`}
+            aria-label="Quantity"
+          >
+            {EACH_QUANTITY_OPTIONS.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type="number"
+            min={0.1}
+            step={0.1}
+            value={item.quantity}
+            onChange={(e) => onQuantityChange(item.id, Number(e.target.value))}
+            className={`${controlFieldClass} w-14 sm:w-16`}
+          />
+        )}
         <span className="w-8 text-[10px] text-slate-500 sm:w-10 sm:text-xs">{item.unit}</span>
       </div>
       <button
         type="button"
-        className="grid h-7 w-7 place-items-center rounded-[6px] text-red-600 hover:bg-red-50 sm:h-8 sm:w-8 dark:hover:bg-red-950"
+        className="grid min-h-8 min-w-8 place-items-center rounded-[6px] text-[#505258] hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
         onClick={() => onDelete(item.id)}
         aria-label={`Delete ${item.text}`}
         title="Delete item"
