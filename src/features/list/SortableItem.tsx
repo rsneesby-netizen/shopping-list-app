@@ -1,6 +1,7 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { ListItemRow } from '../../types'
+import { ItemDeleteIcon } from './listIcons'
 
 type Props = {
   item: ListItemRow
@@ -72,12 +73,12 @@ export function SortableItem({
       </div>
       <button
         type="button"
-        className="grid h-7 w-7 place-items-center rounded-[6px] text-base leading-none text-red-600 hover:bg-red-50 sm:h-8 sm:w-8 dark:hover:bg-red-950"
+        className="grid h-7 w-7 place-items-center rounded-[6px] text-red-600 hover:bg-red-50 sm:h-8 sm:w-8 dark:hover:bg-red-950"
         onClick={() => onDelete(item.id)}
         aria-label={`Delete ${item.text}`}
         title="Delete item"
       >
-        ×
+        <ItemDeleteIcon className="h-5 w-5 sm:h-6 sm:w-6" />
       </button>
     </li>
   )
