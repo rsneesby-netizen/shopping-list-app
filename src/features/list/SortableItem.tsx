@@ -70,6 +70,7 @@ export function SortableItem({
     opacity: isDragging ? 0.7 : 1,
   }
   const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const longPressTriggeredRef = useRef(false)
 
   function clearLongPress() {
     if (!longPressRef.current) return
@@ -81,9 +82,12 @@ export function SortableItem({
     if (!enableLongPressCategoryChange || !onLongPressCategoryChange) return
     if (e.pointerType === 'mouse' && e.button !== 0) return
     const target = e.target as HTMLElement
-    if (target.closest('button, input, select, a, label')) return
+    // Allow long-press on most of the row (including text area), but never on active controls.
+    if (target.closest('button, input, select, a')) return
+    longPressTriggeredRef.current = false
     clearLongPress()
     longPressRef.current = setTimeout(() => {
+      longPressTriggeredRef.current = true
       onLongPressCategoryChange(item.id)
       longPressRef.current = null
     }, 500)
@@ -110,6 +114,13 @@ export function SortableItem({
       onPointerLeave={clearLongPress}
       onPointerCancel={clearLongPress}
       onContextMenu={enableLongPressCategoryChange ? (e) => e.preventDefault() : undefined}
+      onClickCapture={(e) => {
+        if (!longPressTriggeredRef.current) return
+        // Prevent the delayed click from toggling checkbox/other default row actions.
+        e.preventDefault()
+        e.stopPropagation()
+        longPressTriggeredRef.current = false
+      }}
       className={
         inGroupedBlock
           ? 'flex items-center gap-1.5 rounded-none bg-transparent px-2 py-1.5 sm:gap-2 sm:px-3 sm:py-2 dark:bg-transparent'
@@ -119,7 +130,7 @@ export function SortableItem({
       {showDragHandle ? (
         <button
           type="button"
-          className="grid min-h-8 min-w-8 touch-none place-items-center rounded-[6px] p-1 text-slate-400 hover:bg-slate-100 disabled:opacity-30 dark:hover:bg-slate-800"
+          className="grid min-h-8 min-w-8 touch-none place-items-center rounded-[6px] p-1 text-slate-400 hover:bg-slate-100 active:bg-slate-100 disabled:opacity-30 dark:hover:bg-slate-800 dark:active:bg-slate-800"
           aria-label="Drag to reorder"
           disabled={disabled}
           {...attributes}
@@ -182,7 +193,7 @@ export function SortableItem({
       </div>
       <button
         type="button"
-        className="grid min-h-8 min-w-8 place-items-center rounded-[6px] text-[#505258] hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+        className="grid min-h-8 min-w-8 place-items-center rounded-[6px] text-[#505258] hover:bg-slate-100 active:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 dark:active:bg-slate-800"
         onClick={() => onDelete(item.id)}
         aria-label={`Delete ${item.text}`}
         title="Delete item"

@@ -36,9 +36,10 @@ import { CategoryOrderModal } from './CategoryOrderModal'
 import { RecommendationsDrawer } from './RecommendationsDrawer'
 import { SortableItem } from './SortableItem'
 import { BackToListsIcon, GroupCollapseChevronIcon, GroupExpandChevronIcon } from './listIcons'
-import { ToolbarIconMore, ToolbarIconRedo, ToolbarIconUndo } from './toolbarIcons'
+import { ToolbarIconMore, ToolbarIconRecommended, ToolbarIconRedo, ToolbarIconUndo } from './toolbarIcons'
 
 const ADD_EACH_QTY_OPTIONS = Array.from({ length: 20 }, (_, i) => i + 1)
+type PendingAdd = { text: string; qty: number; unit: string }
 
 export function ListPage() {
   const { listId } = useParams()
@@ -62,6 +63,7 @@ export function ListPage() {
   const [actionsOpen, setActionsOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [inviteUrl, setInviteUrl] = useState<string | null>(null)
+  const [pendingDuplicateAdd, setPendingDuplicateAdd] = useState<PendingAdd | null>(null)
   const [categoryPickerItemId, setCategoryPickerItemId] = useState<string | null>(null)
   const [categoryTargetKey, setCategoryTargetKey] = useState<string>('miscellaneous')
   /** When true, category group body is hidden */
@@ -329,6 +331,12 @@ export function ListPage() {
         return
       }
       qty = p
+    }
+    const fp = fingerprintFromText(newText)
+    const alreadyExists = items.some((i) => fingerprintFromText(i.text) === fp)
+    if (alreadyExists) {
+      setPendingDuplicateAdd({ text: newText, qty, unit: u })
+      return
     }
     await insertItem(newText, qty, u)
     setNewText('')
@@ -629,7 +637,7 @@ export function ListPage() {
               <div className="absolute right-0 top-9 z-20 w-56 rounded-[6px] border border-slate-200 bg-white p-2 text-xs shadow-md dark:border-slate-700 dark:bg-slate-900">
                 <button
                   type="button"
-                  className="mb-1 block w-full rounded-[6px] px-2 py-1 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className="mb-1 block min-h-8 w-full rounded-[6px] px-2 py-1 text-left hover:bg-slate-100 active:bg-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
                   onClick={() => {
                     setActionsOpen(false)
                     setCatOpen(true)
@@ -639,7 +647,7 @@ export function ListPage() {
                 </button>
                 <button
                   type="button"
-                  className="block w-full rounded-[6px] px-2 py-1 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className="block min-h-8 w-full rounded-[6px] px-2 py-1 text-left hover:bg-slate-100 active:bg-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
                   onClick={() => {
                     setActionsOpen(false)
                     void createInvite()
@@ -652,7 +660,7 @@ export function ListPage() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-h-8 min-w-[11rem] max-w-full flex-1 sm:max-w-[16rem] sm:flex-initial">
+          <div className="relative min-h-8 min-w-[11rem] max-w-full flex-1 sm:max-w-[13.5rem] sm:flex-initial">
             <label htmlFor="list-store-layout" className="sr-only">
               Store layout
             </label>
@@ -700,10 +708,12 @@ export function ListPage() {
           </div>
           <button
             type="button"
-            className="flex min-h-8 items-center rounded-[6px] bg-teal-700 px-3 text-xs font-semibold text-white"
+            className="grid h-8 min-h-8 w-8 min-w-8 place-items-center rounded-[6px] border border-slate-200 text-slate-700 dark:border-slate-600 dark:text-slate-200"
             onClick={() => setRecOpen(true)}
+            aria-label="Recommended"
+            title="Recommended"
           >
-            Recommended
+            <ToolbarIconRecommended className="h-6 w-6 shrink-0" />
           </button>
         </div>
         {inviteUrl && (
@@ -763,10 +773,13 @@ export function ListPage() {
             return (
               <section key={key} className="space-y-1">
                 <div className="flex items-center justify-between gap-2 py-0.5">
-                  <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400">{headingForCategoryKey(key)}</h3>
                   <button
                     type="button"
-                    className="grid min-h-8 min-w-8 shrink-0 place-items-center rounded-[6px] text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                    className={`flex min-h-8 items-center gap-1 rounded-[6px] pl-2 pr-2 text-slate-600 dark:text-slate-400 ${
+                      collapsed
+                        ? 'bg-slate-100 hover:bg-slate-200 active:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 dark:active:bg-slate-700'
+                        : 'hover:bg-slate-100 active:bg-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800'
+                    }`}
                     aria-expanded={!collapsed}
                     aria-label={
                       collapsed ? `Expand ${headingForCategoryKey(key)}` : `Collapse ${headingForCategoryKey(key)}`
@@ -779,14 +792,20 @@ export function ListPage() {
                     }
                   >
                     {collapsed ? (
-                      <GroupCollapseChevronIcon className="h-6 w-6" />
+                      <GroupCollapseChevronIcon className="h-6 w-6 shrink-0" />
                     ) : (
-                      <GroupExpandChevronIcon className="h-6 w-6" />
+                      <GroupExpandChevronIcon className="h-6 w-6 shrink-0" />
                     )}
+                    <span className="text-xs font-semibold">{headingForCategoryKey(key)}</span>
                   </button>
+                  <span className="min-w-8" aria-hidden />
                 </div>
-                {collapsed ? null : (
-                  <ul className="flex flex-col gap-0 divide-y divide-slate-200 overflow-hidden rounded-[6px] bg-white dark:divide-slate-700 dark:bg-slate-900">
+                <div
+                  className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-200 ease-out ${
+                    collapsed ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
+                  }`}
+                >
+                  <ul className="min-h-0 flex flex-col gap-0 divide-y divide-slate-100 overflow-hidden rounded-[6px] bg-white dark:divide-slate-800 dark:bg-slate-900">
                     {rows.map((item) => (
                       <SortableItem
                         key={item.id}
@@ -803,14 +822,14 @@ export function ListPage() {
                       />
                     ))}
                   </ul>
-                )}
+                </div>
               </section>
             )
           })}
           <section>
             <h2 className="mb-2 text-sm font-semibold text-slate-500">Completed</h2>
             {completedSorted.length ? (
-              <ul className="flex flex-col gap-0 divide-y divide-slate-200 overflow-hidden rounded-[6px] bg-white dark:divide-slate-700 dark:bg-slate-900">
+              <ul className="flex flex-col gap-0 divide-y divide-slate-100 overflow-hidden rounded-[6px] bg-white dark:divide-slate-800 dark:bg-slate-900">
                 {completedSorted.map((item) => (
                   <SortableItem
                     key={item.id}
@@ -914,6 +933,43 @@ export function ListPage() {
         suggestions={suggestions}
         onAdd={(s) => void addSuggestion(s)}
       />
+
+      {pendingDuplicateAdd ? (
+        <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
+          <div className="w-full max-w-sm rounded-t-3xl bg-white p-4 shadow-xl dark:bg-slate-900 sm:rounded-2xl">
+            <h3 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-50">Duplicate item</h3>
+            <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">
+              item already exists, do you wish to continue adding it.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="flex-1 rounded-[6px] border border-slate-200 py-2 text-sm font-medium dark:border-slate-600"
+                onClick={() => setPendingDuplicateAdd(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="flex-1 rounded-[6px] bg-teal-700 py-2 text-sm font-semibold text-white"
+                onClick={() => {
+                  const payload = pendingDuplicateAdd
+                  setPendingDuplicateAdd(null)
+                  if (!payload) return
+                  void insertItem(payload.text, payload.qty, payload.unit)
+                  setNewText('')
+                  setNewQty(1)
+                  setNewQtyText('1')
+                  setNewUnit('each')
+                  setError(null)
+                }}
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {categoryPickerItem ? (
         <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
