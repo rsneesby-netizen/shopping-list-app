@@ -62,6 +62,8 @@ export function ListPage() {
   const [actionsOpen, setActionsOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [inviteUrl, setInviteUrl] = useState<string | null>(null)
+  const [categoryPickerItemId, setCategoryPickerItemId] = useState<string | null>(null)
+  const [categoryTargetKey, setCategoryTargetKey] = useState<string>('miscellaneous')
   /** When true, category group body is hidden */
   const [collapsedCategoryKeys, setCollapsedCategoryKeys] = useState<Record<string, boolean>>({})
   const actionsMenuRef = useRef<HTMLDivElement | null>(null)
@@ -488,6 +490,33 @@ export function ListPage() {
     await refreshAll()
   }
 
+  async function changeItemCategory(id: string, categoryKey: string) {
+    if (!listId) return
+    const current = items.find((i) => i.id === id)
+    if (!current) return
+    const prevKey = inferCategoryKey(current.text, current.category_key)
+    if (prevKey === categoryKey) return
+    const fp = fingerprintFromText(current.text)
+    await push({
+      apply: async () => {
+        const { error: err } = await supabase.from('list_items').update({ category_key: categoryKey }).eq('id', id)
+        if (err) throw err
+        await logListItemEvent(supabase, {
+          listId,
+          itemId: id,
+          eventType: 'category_changed',
+          fingerprint: fp,
+          payload: { from: prevKey, to: categoryKey, text: current.text },
+        })
+      },
+      revert: async () => {
+        const { error: err } = await supabase.from('list_items').update({ category_key: prevKey }).eq('id', id)
+        if (err) throw err
+      },
+    })
+    await refreshAll()
+  }
+
   async function createInvite() {
     if (!listId) return
     setError(null)
@@ -527,6 +556,18 @@ export function ListPage() {
     }
     return { buckets }
   }, [activeSorted, categoryWalkOrder])
+
+  const categoryPickerItem = useMemo(
+    () => (categoryPickerItemId ? items.find((i) => i.id === categoryPickerItemId) ?? null : null),
+    [categoryPickerItemId, items],
+  )
+
+  function openCategoryPicker(itemId: string) {
+    const item = items.find((i) => i.id === itemId)
+    if (!item) return
+    setCategoryPickerItemId(itemId)
+    setCategoryTargetKey(inferCategoryKey(item.text, item.category_key))
+  }
 
   if (!listId) {
     return <p className="p-4 text-sm text-slate-600">Missing list id.</p>
@@ -752,11 +793,13 @@ export function ListPage() {
                         item={item}
                         disabled
                         inGroupedBlock
+                        enableLongPressCategoryChange
                         showDragHandle={false}
                         onToggle={(id, c) => void toggleItem(id, c)}
                         onDelete={(id) => void deleteItem(id)}
                         onQuantityChange={(id, q) => void changeQuantity(id, q)}
                         onUnitChange={(id, u) => void changeUnit(id, u)}
+                        onLongPressCategoryChange={openCategoryPicker}
                       />
                     ))}
                   </ul>
@@ -774,11 +817,13 @@ export function ListPage() {
                     item={item}
                     disabled
                     inGroupedBlock
+                    enableLongPressCategoryChange
                     showDragHandle={false}
                     onToggle={(id, c) => void toggleItem(id, c)}
                     onDelete={(id) => void deleteItem(id)}
                     onQuantityChange={(id, q) => void changeQuantity(id, q)}
                     onUnitChange={(id, u) => void changeUnit(id, u)}
+                    onLongPressCategoryChange={openCategoryPicker}
                   />
                 ))}
               </ul>
@@ -869,6 +914,46 @@ export function ListPage() {
         suggestions={suggestions}
         onAdd={(s) => void addSuggestion(s)}
       />
+
+      {categoryPickerItem ? (
+        <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
+          <div className="w-full max-w-sm rounded-t-3xl bg-white p-4 shadow-xl dark:bg-slate-900 sm:rounded-2xl">
+            <h3 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-50">Move item to category</h3>
+            <p className="mb-3 text-xs text-slate-500">{categoryPickerItem.text}</p>
+            <select
+              className="mb-3 min-h-8 w-full rounded-[6px] border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950"
+              value={categoryTargetKey}
+              onChange={(e) => setCategoryTargetKey(e.target.value)}
+              aria-label="Select category"
+            >
+              {categoryWalkOrder.map((key) => (
+                <option key={key} value={key}>
+                  {headingForCategoryKey(key)}
+                </option>
+              ))}
+            </select>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="flex-1 rounded-[6px] border border-slate-200 py-2 text-sm font-medium dark:border-slate-600"
+                onClick={() => setCategoryPickerItemId(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="flex-1 rounded-[6px] bg-teal-700 py-2 text-sm font-semibold text-white"
+                onClick={() => {
+                  void changeItemCategory(categoryPickerItem.id, categoryTargetKey)
+                  setCategoryPickerItemId(null)
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {catOpen && (
         <CategoryOrderModal

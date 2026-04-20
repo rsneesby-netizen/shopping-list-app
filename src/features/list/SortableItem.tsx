@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
@@ -25,10 +25,12 @@ type Props = {
   disabled?: boolean
   showDragHandle?: boolean
   inGroupedBlock?: boolean
+  enableLongPressCategoryChange?: boolean
   onToggle: (id: string, checked: boolean) => void
   onDelete: (id: string) => void
   onQuantityChange: (id: string, quantity: number) => void
   onUnitChange: (id: string, unit: string) => void
+  onLongPressCategoryChange?: (id: string) => void
 }
 
 function eachQuantityValue(q: number) {
@@ -41,10 +43,12 @@ export function SortableItem({
   disabled,
   showDragHandle = true,
   inGroupedBlock = false,
+  enableLongPressCategoryChange = false,
   onToggle,
   onDelete,
   onQuantityChange,
   onUnitChange,
+  onLongPressCategoryChange,
 }: Props) {
   const unit = normalizeUnit(item.unit)
   const isEach = unit === 'each'
@@ -65,6 +69,25 @@ export function SortableItem({
     transition,
     opacity: isDragging ? 0.7 : 1,
   }
+  const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function clearLongPress() {
+    if (!longPressRef.current) return
+    clearTimeout(longPressRef.current)
+    longPressRef.current = null
+  }
+
+  function handlePointerDown(e: ReactPointerEvent<HTMLLIElement>) {
+    if (!enableLongPressCategoryChange || !onLongPressCategoryChange) return
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    const target = e.target as HTMLElement
+    if (target.closest('button, input, select, a, label')) return
+    clearLongPress()
+    longPressRef.current = setTimeout(() => {
+      onLongPressCategoryChange(item.id)
+      longPressRef.current = null
+    }, 500)
+  }
 
   function commitQtyText() {
     const parsed = parseQuantityInput(unit, qtyText)
@@ -82,6 +105,11 @@ export function SortableItem({
     <li
       ref={setNodeRef}
       style={style}
+      onPointerDown={handlePointerDown}
+      onPointerUp={clearLongPress}
+      onPointerLeave={clearLongPress}
+      onPointerCancel={clearLongPress}
+      onContextMenu={enableLongPressCategoryChange ? (e) => e.preventDefault() : undefined}
       className={
         inGroupedBlock
           ? 'flex items-center gap-1.5 rounded-none bg-transparent px-2 py-1.5 sm:gap-2 sm:px-3 sm:py-2 dark:bg-transparent'
