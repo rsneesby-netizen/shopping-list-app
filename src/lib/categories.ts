@@ -19,6 +19,13 @@ export function categoryLabel(key: string): string {
   return defByKey.get(key)?.label ?? key
 }
 
+/** Display name for a category on a store layout (override or taxonomy default). */
+export function categoryDisplayLabel(key: string, labelOverride: string | null | undefined): string {
+  const o = labelOverride?.trim()
+  if (o) return o
+  return categoryLabel(key)
+}
+
 export function resolveCategoryOrder(
   override: string[] | null | undefined,
   presetKeysOrdered: string[],

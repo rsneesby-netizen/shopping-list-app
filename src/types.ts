@@ -31,6 +31,8 @@ export type StorePresetCategoryRow = {
   preset_id: string
   category_key: string
   sort_index: number
+  /** Custom label for this store; null uses default taxonomy label */
+  label_override?: string | null
 }
 
 export type ListItemEventRow = {

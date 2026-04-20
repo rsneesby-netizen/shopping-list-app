@@ -11,7 +11,7 @@ import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrate
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useUndoRedo } from '../../hooks/useUndoRedo'
-import { categoryLabel, inferCategoryKey, listCategoryDefs } from '../../lib/categories'
+import { categoryDisplayLabel, categoryLabel, inferCategoryKey, listCategoryDefs } from '../../lib/categories'
 import { logListItemEvent } from '../../lib/events'
 import { fingerprintFromText } from '../../lib/normalize'
 import { keyAfterLast, keyAfterReorder, sortByPosition } from '../../lib/positions'
@@ -177,6 +177,15 @@ export function ListPage() {
   }, [list, presetCats])
 
   const categoryWalkOrder = useMemo(() => [...presetKeysOrdered], [presetKeysOrdered])
+
+  const headingForCategoryKey = useCallback(
+    (key: string) => {
+      if (!list?.store_preset_id) return categoryLabel(key)
+      const row = presetCats.find((c) => c.preset_id === list.store_preset_id && c.category_key === key)
+      return categoryDisplayLabel(key, row?.label_override)
+    },
+    [list?.store_preset_id, presetCats],
+  )
 
   const suggestions = useMemo(
     () => buildSuggestions(events, items),
@@ -577,20 +586,6 @@ export function ListPage() {
             </button>
             {actionsOpen ? (
               <div className="absolute right-0 top-9 z-20 w-56 rounded-[6px] border border-slate-200 bg-white p-2 text-xs shadow-md dark:border-slate-700 dark:bg-slate-900">
-                <label className="mb-2 flex flex-col gap-1 text-slate-600 dark:text-slate-300">
-                  Store layout
-                  <select
-                    className="rounded-[6px] border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-900"
-                    value={list?.store_preset_id ?? ''}
-                    onChange={(e) => void persistPreset(e.target.value || null)}
-                  >
-                    {presets.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 <button
                   type="button"
                   className="mb-1 block w-full rounded-[6px] px-2 py-1 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
@@ -599,7 +594,7 @@ export function ListPage() {
                     setCatOpen(true)
                   }}
                 >
-                  Aisle order
+                  Manage store aisle ordering
                 </button>
                 <button
                   type="button"
@@ -616,6 +611,36 @@ export function ListPage() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-h-8 min-w-[11rem] max-w-full flex-1 sm:max-w-[16rem] sm:flex-initial">
+            <label htmlFor="list-store-layout" className="sr-only">
+              Store layout
+            </label>
+            <select
+              id="list-store-layout"
+              className="min-h-8 w-full appearance-none rounded-[6px] border border-slate-200 bg-white py-1.5 pl-3 pr-9 text-sm font-medium text-slate-900 outline-none focus:border-slate-400 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-500"
+              value={list?.store_preset_id ?? ''}
+              onChange={(e) => void persistPreset(e.target.value || null)}
+              aria-label="Store layout"
+            >
+              {presets.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <span
+              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400"
+              aria-hidden
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                <path
+                  fillRule="evenodd"
+                  d="M5.23 7.21a.75.75 0 011.06.02L10 11.084l3.71-3.852a.75.75 0 111.08 1.04l-4.24 4.4a.75.75 0 01-1.08 0l-4.24-4.4a.75.75 0 01.02-1.06z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </span>
+          </div>
           <div className="flex rounded-[6px] border border-slate-200 p-0.5 text-xs dark:border-slate-600">
             <button
               type="button"
@@ -697,12 +722,14 @@ export function ListPage() {
             return (
               <section key={key} className="space-y-1">
                 <div className="flex items-center justify-between gap-2 py-0.5">
-                  <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400">{categoryLabel(key)}</h3>
+                  <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400">{headingForCategoryKey(key)}</h3>
                   <button
                     type="button"
                     className="grid min-h-8 min-w-8 shrink-0 place-items-center rounded-[6px] text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
                     aria-expanded={!collapsed}
-                    aria-label={collapsed ? `Expand ${categoryLabel(key)}` : `Collapse ${categoryLabel(key)}`}
+                    aria-label={
+                      collapsed ? `Expand ${headingForCategoryKey(key)}` : `Collapse ${headingForCategoryKey(key)}`
+                    }
                     onClick={() =>
                       setCollapsedCategoryKeys((prev) => ({
                         ...prev,
@@ -711,9 +738,9 @@ export function ListPage() {
                     }
                   >
                     {collapsed ? (
-                      <GroupExpandChevronIcon className="h-6 w-6" />
-                    ) : (
                       <GroupCollapseChevronIcon className="h-6 w-6" />
+                    ) : (
+                      <GroupExpandChevronIcon className="h-6 w-6" />
                     )}
                   </button>
                 </div>
@@ -845,31 +872,44 @@ export function ListPage() {
 
       {catOpen && (
         <CategoryOrderModal
-          initialOrder={categoryWalkOrder}
+          presets={presets}
+          presetCats={presetCats}
+          defaultEditingPresetId={list?.store_preset_id ?? null}
           onClose={() => setCatOpen(false)}
-          onSave={async (order) => {
-            if (!list?.store_preset_id) {
-              setError('Select a store layout first.')
-              return
-            }
+          onSave={async (payload) => {
+            setError(null)
             const { error: err } = await supabase.rpc('save_store_preset_order', {
-              target_preset_id: list.store_preset_id,
-              ordered_categories: order,
+              target_preset_id: payload.targetPresetId,
+              ordered_categories: payload.order,
             })
             if (err) {
               setError(err.message)
               return
             }
-            setPresetCats((prev) => {
-              const remaining = prev.filter((r) => r.preset_id !== list.store_preset_id)
-              const nextRows = order.map((categoryKey, idx) => ({
-                id: `local-${idx}-${categoryKey}`,
-                preset_id: list.store_preset_id as string,
-                category_key: categoryKey,
-                sort_index: idx,
-              }))
-              return [...remaining, ...nextRows]
-            })
+            for (const key of payload.order) {
+              const raw = payload.labels[key] ?? ''
+              const t = raw.trim()
+              const def = categoryLabel(key)
+              const labelOverride = !t || t === def ? null : t
+              const { error: uerr } = await supabase
+                .from('store_preset_categories')
+                .update({ label_override: labelOverride })
+                .eq('preset_id', payload.targetPresetId)
+                .eq('category_key', key)
+              if (uerr) {
+                setError(uerr.message)
+                return
+              }
+            }
+            const { data: pcRows, error: fetchErr } = await supabase
+              .from('store_preset_categories')
+              .select('*')
+              .order('sort_index')
+            if (fetchErr) {
+              setError(fetchErr.message)
+              return
+            }
+            setPresetCats((pcRows ?? []) as StorePresetCategoryRow[])
           }}
         />
       )}
