@@ -25,6 +25,7 @@ type Props = {
   disabled?: boolean
   showDragHandle?: boolean
   inGroupedBlock?: boolean
+  isOnSpecial?: boolean
   enableLongPressCategoryChange?: boolean
   onToggle: (id: string, checked: boolean) => void
   onDelete: (id: string) => void
@@ -43,6 +44,7 @@ export function SortableItem({
   disabled,
   showDragHandle = true,
   inGroupedBlock = false,
+  isOnSpecial = false,
   enableLongPressCategoryChange = false,
   onToggle,
   onDelete,
@@ -123,10 +125,11 @@ export function SortableItem({
       }}
       className={
         inGroupedBlock
-          ? 'flex items-center gap-1.5 rounded-none bg-transparent px-2 py-1.5 sm:gap-2 sm:px-3 sm:py-2 dark:bg-transparent'
-          : 'flex items-center gap-1.5 rounded-[6px] bg-white px-2 py-1.5 sm:gap-2 sm:px-3 sm:py-2 dark:bg-slate-900'
+          ? 'relative flex items-center gap-1.5 rounded-none bg-transparent px-2 py-1.5 sm:gap-2 sm:px-3 sm:py-2 dark:bg-transparent'
+          : 'relative flex items-center gap-1.5 rounded-[6px] bg-white px-2 py-1.5 sm:gap-2 sm:px-3 sm:py-2 dark:bg-slate-900'
       }
     >
+      {isOnSpecial ? <span className="absolute inset-y-0 left-0 w-0.5 bg-amber-300" aria-hidden /> : null}
       {showDragHandle ? (
         <button
           type="button"

@@ -14,6 +14,7 @@ import { useUndoRedo } from '../../hooks/useUndoRedo'
 import { categoryDisplayLabel, categoryLabel, inferCategoryKey, listCategoryDefs } from '../../lib/categories'
 import { logListItemEvent } from '../../lib/events'
 import { fingerprintFromText } from '../../lib/normalize'
+import { estimateListPricing, fetchMergedListPricing, type ListPriceEstimate } from '../../lib/pricing'
 import { keyAfterLast, keyAfterReorder, sortByPosition } from '../../lib/positions'
 import { buildSuggestions } from '../../lib/recommendations'
 import {
@@ -251,38 +252,45 @@ export function ListPage() {
     const position = keyAfterLast(activePositions)
     let createdId: string | null = null
     setError(null)
-    await push({
-      apply: async () => {
-        const { data, error: err } = await supabase
-          .from('list_items')
-          .insert({
-            list_id: listId,
-            text: trimmed,
-            quantity: q,
-            unit: u,
-            checked: false,
-            position,
-            category_key: cat,
+    try {
+      await push({
+        apply: async () => {
+          const { data, error: err } = await supabase
+            .from('list_items')
+            .insert({
+              list_id: listId,
+              text: trimmed,
+              quantity: q,
+              unit: u,
+              checked: false,
+              position,
+              category_key: cat,
+            })
+            .select('*')
+            .single()
+          if (err) throw err
+          createdId = data.id
+          setItems((prev) => {
+            if (prev.some((i) => i.id === data.id)) return prev
+            return sortByPosition([...prev, data as ListItemRow])
           })
-          .select('*')
-          .single()
-        if (err) throw err
-        createdId = data.id
-        await logListItemEvent(supabase, {
-          listId,
-          itemId: data.id,
-          eventType: 'item_added',
-          fingerprint: fp,
-          payload: { text: trimmed, quantity: q, unit: u },
-        })
-      },
-      revert: async () => {
-        if (!createdId) return
-        const { error: err } = await supabase.from('list_items').delete().eq('id', createdId)
-        if (err) throw err
-      },
-    })
-    await refreshAll()
+          void logListItemEvent(supabase, {
+            listId,
+            itemId: data.id,
+            eventType: 'item_added',
+            fingerprint: fp,
+            payload: { text: trimmed, quantity: q, unit: u },
+          })
+        },
+        revert: async () => {
+          if (!createdId) return
+          const { error: err } = await supabase.from('list_items').delete().eq('id', createdId)
+          if (err) throw err
+        },
+      })
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Could not add item')
+    }
   }
 
   async function onDragEnd(e: DragEndEvent) {
@@ -298,24 +306,33 @@ export function ListPage() {
     if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return
     const newPos = keyAfterReorder(bucket, oldIndex, newIndex)
     const prevPos = activeItem.position
-    await push({
-      apply: async () => {
-        const { error: err } = await supabase.from('list_items').update({ position: newPos }).eq('id', activeItem.id)
-        if (err) throw err
-        await logListItemEvent(supabase, {
-          listId,
-          itemId: activeItem.id,
-          eventType: 'reorder',
-          fingerprint: fingerprintFromText(activeItem.text),
-          payload: { from: prevPos, to: newPos },
-        })
-      },
-      revert: async () => {
-        const { error: err } = await supabase.from('list_items').update({ position: prevPos }).eq('id', activeItem.id)
-        if (err) throw err
-      },
-    })
-    await refreshAll()
+    setItems((prev) =>
+      sortByPosition(prev.map((i) => (i.id === activeItem.id ? { ...i, position: newPos } : i))),
+    )
+    try {
+      await push({
+        apply: async () => {
+          const { error: err } = await supabase.from('list_items').update({ position: newPos }).eq('id', activeItem.id)
+          if (err) throw err
+          void logListItemEvent(supabase, {
+            listId,
+            itemId: activeItem.id,
+            eventType: 'reorder',
+            fingerprint: fingerprintFromText(activeItem.text),
+            payload: { from: prevPos, to: newPos },
+          })
+        },
+        revert: async () => {
+          const { error: err } = await supabase.from('list_items').update({ position: prevPos }).eq('id', activeItem.id)
+          if (err) throw err
+        },
+      })
+    } catch (e: unknown) {
+      setItems((prev) =>
+        sortByPosition(prev.map((i) => (i.id === activeItem.id ? { ...i, position: prevPos } : i))),
+      )
+      setError(e instanceof Error ? e.message : 'Reorder failed')
+    }
   }
 
   async function addItem() {
@@ -351,34 +368,75 @@ export function ListPage() {
     const snap = items.find((i) => i.id === id)
     if (!snap) return
     const fp = fingerprintFromText(snap.text)
-    await push({
-      apply: async () => {
-        const { error: err } = await supabase.from('list_items').delete().eq('id', id)
-        if (err) throw err
-        await logListItemEvent(supabase, {
-          listId,
-          itemId: id,
-          eventType: 'item_deleted',
-          fingerprint: fp,
-          payload: { snapshot: snap },
-        })
-      },
-      revert: async () => {
-        const { error: err } = await supabase.from('list_items').insert({
-          id: snap.id,
-          list_id: snap.list_id,
-          text: snap.text,
-          quantity: snap.quantity,
-          unit: snap.unit,
-          checked: snap.checked,
-          position: snap.position,
-          category_key: snap.category_key,
-          created_by: snap.created_by,
-        })
-        if (err) throw err
-      },
-    })
-    await refreshAll()
+    setItems((prev) => prev.filter((i) => i.id !== id))
+    try {
+      await push({
+        apply: async () => {
+          const { error: err } = await supabase.from('list_items').delete().eq('id', id)
+          if (err) throw err
+          void logListItemEvent(supabase, {
+            listId,
+            itemId: id,
+            eventType: 'item_deleted',
+            fingerprint: fp,
+            payload: { snapshot: snap },
+          })
+        },
+        revert: async () => {
+          const { error: err } = await supabase.from('list_items').insert({
+            id: snap.id,
+            list_id: snap.list_id,
+            text: snap.text,
+            quantity: snap.quantity,
+            unit: snap.unit,
+            checked: snap.checked,
+            position: snap.position,
+            category_key: snap.category_key,
+            created_by: snap.created_by,
+          })
+          if (err) throw err
+        },
+      })
+    } catch (e: unknown) {
+      setItems((prev) => sortByPosition([...prev, snap]))
+      setError(e instanceof Error ? e.message : 'Delete failed')
+    }
+  }
+
+  async function deleteCompletedItems() {
+    if (!listId) return
+    const snaps = completedSorted
+    if (!snaps.length) return
+    const ids = snaps.map((s) => s.id)
+    const idSet = new Set(ids)
+    setItems((prev) => prev.filter((i) => !idSet.has(i.id)))
+    try {
+      await push({
+        apply: async () => {
+          const { error: err } = await supabase.from('list_items').delete().in('id', ids)
+          if (err) throw err
+        },
+        revert: async () => {
+          const { error: err } = await supabase.from('list_items').insert(
+            snaps.map((snap) => ({
+              id: snap.id,
+              list_id: snap.list_id,
+              text: snap.text,
+              quantity: snap.quantity,
+              unit: snap.unit,
+              checked: snap.checked,
+              position: snap.position,
+              category_key: snap.category_key,
+              created_by: snap.created_by,
+            })),
+          )
+          if (err) throw err
+        },
+      })
+    } catch (e: unknown) {
+      setItems((prev) => sortByPosition([...prev, ...snaps]))
+      setError(e instanceof Error ? e.message : 'Delete failed')
+    }
   }
 
   async function toggleItem(id: string, checked: boolean) {
@@ -390,45 +448,51 @@ export function ListPage() {
     const activePositions = activeSorted.filter((i) => i.id !== id).map((i) => i.position)
     const position = checked ? keyAfterLast(completedPositions) : keyAfterLast(activePositions)
     const prev = { checked: current.checked, position: current.position }
-    await push({
-      apply: async () => {
-        const { error: err } = await supabase
-          .from('list_items')
-          .update({ checked, position })
-          .eq('id', id)
-        if (err) throw err
-        if (checked) {
-          await logListItemEvent(supabase, {
-            listId,
-            itemId: id,
-            eventType: 'item_checked',
-            fingerprint: fp,
-            payload: {
-              text: current.text,
-              quantity: current.quantity,
-              unit: current.unit,
-              checked: true,
-            },
-          })
-        } else {
-          await logListItemEvent(supabase, {
-            listId,
-            itemId: id,
-            eventType: 'item_unchecked',
-            fingerprint: fp,
-            payload: { text: current.text },
-          })
-        }
-      },
-      revert: async () => {
-        const { error: err } = await supabase
-          .from('list_items')
-          .update({ checked: prev.checked, position: prev.position })
-          .eq('id', id)
-        if (err) throw err
-      },
-    })
-    await refreshAll()
+    const nextRow: ListItemRow = { ...current, checked, position }
+    setItems((p) => sortByPosition(p.map((i) => (i.id === id ? nextRow : i))))
+    try {
+      await push({
+        apply: async () => {
+          const { error: err } = await supabase
+            .from('list_items')
+            .update({ checked, position })
+            .eq('id', id)
+          if (err) throw err
+          if (checked) {
+            void logListItemEvent(supabase, {
+              listId,
+              itemId: id,
+              eventType: 'item_checked',
+              fingerprint: fp,
+              payload: {
+                text: current.text,
+                quantity: current.quantity,
+                unit: current.unit,
+                checked: true,
+              },
+            })
+          } else {
+            void logListItemEvent(supabase, {
+              listId,
+              itemId: id,
+              eventType: 'item_unchecked',
+              fingerprint: fp,
+              payload: { text: current.text },
+            })
+          }
+        },
+        revert: async () => {
+          const { error: err } = await supabase
+            .from('list_items')
+            .update({ checked: prev.checked, position: prev.position })
+            .eq('id', id)
+          if (err) throw err
+        },
+      })
+    } catch (e: unknown) {
+      setItems((p) => sortByPosition(p.map((i) => (i.id === id ? current : i))))
+      setError(e instanceof Error ? e.message : 'Update failed')
+    }
   }
 
   async function changeQuantity(id: string, quantity: number) {
@@ -441,24 +505,29 @@ export function ListPage() {
     const u = normalizeUnit(current.unit)
     const q = clampQuantityForUnit(u, quantity)
     if (q === null) return
-    await push({
-      apply: async () => {
-        const { error: err } = await supabase.from('list_items').update({ quantity: q }).eq('id', id)
-        if (err) throw err
-        await logListItemEvent(supabase, {
-          listId,
-          itemId: id,
-          eventType: 'quantity_changed',
-          fingerprint: fp,
-          payload: { from: prevQty, to: q, unit: current.unit, text: current.text },
-        })
-      },
-      revert: async () => {
-        const { error: err } = await supabase.from('list_items').update({ quantity: prevQty }).eq('id', id)
-        if (err) throw err
-      },
-    })
-    await refreshAll()
+    setItems((p) => p.map((i) => (i.id === id ? { ...i, quantity: q } : i)))
+    try {
+      await push({
+        apply: async () => {
+          const { error: err } = await supabase.from('list_items').update({ quantity: q }).eq('id', id)
+          if (err) throw err
+          void logListItemEvent(supabase, {
+            listId,
+            itemId: id,
+            eventType: 'quantity_changed',
+            fingerprint: fp,
+            payload: { from: prevQty, to: q, unit: current.unit, text: current.text },
+          })
+        },
+        revert: async () => {
+          const { error: err } = await supabase.from('list_items').update({ quantity: prevQty }).eq('id', id)
+          if (err) throw err
+        },
+      })
+    } catch (e: unknown) {
+      setItems((p) => p.map((i) => (i.id === id ? { ...i, quantity: prevQty } : i)))
+      setError(e instanceof Error ? e.message : 'Update failed')
+    }
   }
 
   async function changeUnit(id: string, nextUnit: string) {
@@ -472,30 +541,35 @@ export function ListPage() {
     const prevUnit = current.unit
     const nextQty = quantityWhenChangingUnit(prevUnit, nu, current.quantity)
     const prevQty = current.quantity
-    await push({
-      apply: async () => {
-        const { error: err } = await supabase
-          .from('list_items')
-          .update({ unit: nu, quantity: nextQty })
-          .eq('id', id)
-        if (err) throw err
-        await logListItemEvent(supabase, {
-          listId,
-          itemId: id,
-          eventType: 'unit_changed',
-          fingerprint: fp,
-          payload: { from: prevUnit, to: nu, quantity: nextQty, prevQuantity: prevQty, text: current.text },
-        })
-      },
-      revert: async () => {
-        const { error: err } = await supabase
-          .from('list_items')
-          .update({ unit: prevUnit, quantity: prevQty })
-          .eq('id', id)
-        if (err) throw err
-      },
-    })
-    await refreshAll()
+    setItems((p) => p.map((i) => (i.id === id ? { ...i, unit: nu, quantity: nextQty } : i)))
+    try {
+      await push({
+        apply: async () => {
+          const { error: err } = await supabase
+            .from('list_items')
+            .update({ unit: nu, quantity: nextQty })
+            .eq('id', id)
+          if (err) throw err
+          void logListItemEvent(supabase, {
+            listId,
+            itemId: id,
+            eventType: 'unit_changed',
+            fingerprint: fp,
+            payload: { from: prevUnit, to: nu, quantity: nextQty, prevQuantity: prevQty, text: current.text },
+          })
+        },
+        revert: async () => {
+          const { error: err } = await supabase
+            .from('list_items')
+            .update({ unit: prevUnit, quantity: prevQty })
+            .eq('id', id)
+          if (err) throw err
+        },
+      })
+    } catch (e: unknown) {
+      setItems((p) => p.map((i) => (i.id === id ? { ...i, unit: prevUnit, quantity: prevQty } : i)))
+      setError(e instanceof Error ? e.message : 'Update failed')
+    }
   }
 
   async function changeItemCategory(id: string, categoryKey: string) {
@@ -505,24 +579,29 @@ export function ListPage() {
     const prevKey = inferCategoryKey(current.text, current.category_key)
     if (prevKey === categoryKey) return
     const fp = fingerprintFromText(current.text)
-    await push({
-      apply: async () => {
-        const { error: err } = await supabase.from('list_items').update({ category_key: categoryKey }).eq('id', id)
-        if (err) throw err
-        await logListItemEvent(supabase, {
-          listId,
-          itemId: id,
-          eventType: 'category_changed',
-          fingerprint: fp,
-          payload: { from: prevKey, to: categoryKey, text: current.text },
-        })
-      },
-      revert: async () => {
-        const { error: err } = await supabase.from('list_items').update({ category_key: prevKey }).eq('id', id)
-        if (err) throw err
-      },
-    })
-    await refreshAll()
+    setItems((p) => p.map((i) => (i.id === id ? { ...i, category_key: categoryKey } : i)))
+    try {
+      await push({
+        apply: async () => {
+          const { error: err } = await supabase.from('list_items').update({ category_key: categoryKey }).eq('id', id)
+          if (err) throw err
+          void logListItemEvent(supabase, {
+            listId,
+            itemId: id,
+            eventType: 'category_changed',
+            fingerprint: fp,
+            payload: { from: prevKey, to: categoryKey, text: current.text },
+          })
+        },
+        revert: async () => {
+          const { error: err } = await supabase.from('list_items').update({ category_key: prevKey }).eq('id', id)
+          if (err) throw err
+        },
+      })
+    } catch (e: unknown) {
+      setItems((p) => p.map((i) => (i.id === id ? { ...i, category_key: current.category_key } : i)))
+      setError(e instanceof Error ? e.message : 'Update failed')
+    }
   }
 
   async function createInvite() {
@@ -564,6 +643,43 @@ export function ListPage() {
     }
     return { buckets }
   }, [activeSorted, categoryWalkOrder])
+
+  const localPricing = useMemo(
+    () => estimateListPricing(items, list?.store_preset_id ?? null, presets),
+    [items, list?.store_preset_id, presets],
+  )
+
+  const pricingFetchKey = useMemo(
+    () =>
+      `${list?.store_preset_id ?? ''}:${presets.map((p) => `${p.id}:${p.slug}`).join(',')}:${items
+        .map((i) => `${i.id}:${i.quantity}:${normalizeUnit(i.unit)}:${i.text}:${i.checked ? '1' : '0'}`)
+        .join('|')}`,
+    [items, list?.store_preset_id, presets],
+  )
+
+  const [mergedPricing, setMergedPricing] = useState<{ key: string; estimate: ListPriceEstimate } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchMergedListPricing(items, list?.store_preset_id ?? null, presets).then((estimate) => {
+      if (cancelled) return
+      setMergedPricing({ key: pricingFetchKey, estimate })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [pricingFetchKey, items, list?.store_preset_id, presets])
+
+  const pricing = mergedPricing?.key === pricingFetchKey ? mergedPricing.estimate : localPricing
+
+  const remainingEstimatedCost = useMemo(() => {
+    let sum = 0
+    for (const item of items) {
+      if (item.checked) continue
+      sum += pricing.items[item.id]?.estimatedCost ?? 0
+    }
+    return sum
+  }, [items, pricing])
 
   const categoryPickerItem = useMemo(
     () => (categoryPickerItemId ? items.find((i) => i.id === categoryPickerItemId) ?? null : null),
@@ -737,6 +853,7 @@ export function ListPage() {
                   <SortableItem
                     key={item.id}
                     item={item}
+                    isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
                     onToggle={(id, c) => void toggleItem(id, c)}
                     onDelete={(id) => void deleteItem(id)}
                     onQuantityChange={(id, q) => void changeQuantity(id, q)}
@@ -747,13 +864,24 @@ export function ListPage() {
             </SortableContext>
           </section>
           <section className="mt-6">
-            <h2 className="mb-2 text-sm font-semibold text-slate-500">Completed</h2>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-slate-500">Completed</h2>
+              <button
+                type="button"
+                className="min-h-8 rounded-[6px] border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 active:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:active:bg-slate-800 disabled:opacity-40"
+                onClick={() => void deleteCompletedItems()}
+                disabled={!completedSorted.length}
+              >
+                Delete completed items
+              </button>
+            </div>
             <SortableContext items={completedSorted.map((i) => i.id)} strategy={verticalListSortingStrategy}>
               <ul className="flex flex-col gap-1.5 sm:gap-2">
                 {completedSorted.map((item) => (
                   <SortableItem
                     key={item.id}
                     item={item}
+                    isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
                     onToggle={(id, c) => void toggleItem(id, c)}
                     onDelete={(id) => void deleteItem(id)}
                     onQuantityChange={(id, q) => void changeQuantity(id, q)}
@@ -810,6 +938,7 @@ export function ListPage() {
                       <SortableItem
                         key={item.id}
                         item={item}
+                        isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
                         disabled
                         inGroupedBlock
                         enableLongPressCategoryChange
@@ -827,13 +956,24 @@ export function ListPage() {
             )
           })}
           <section>
-            <h2 className="mb-2 text-sm font-semibold text-slate-500">Completed</h2>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-slate-500">Completed</h2>
+              <button
+                type="button"
+                className="min-h-8 rounded-[6px] border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 active:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:active:bg-slate-800 disabled:opacity-40"
+                onClick={() => void deleteCompletedItems()}
+                disabled={!completedSorted.length}
+              >
+                Delete completed items
+              </button>
+            </div>
             {completedSorted.length ? (
               <ul className="flex flex-col gap-0 divide-y divide-slate-100 overflow-hidden rounded-[6px] bg-white dark:divide-slate-800 dark:bg-slate-900">
                 {completedSorted.map((item) => (
                   <SortableItem
                     key={item.id}
                     item={item}
+                    isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
                     disabled
                     inGroupedBlock
                     enableLongPressCategoryChange
@@ -924,6 +1064,11 @@ export function ListPage() {
           >
             Add to list
           </button>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Total estimated cost: ${pricing.totalEstimatedCost.toFixed(2)}
+            <span aria-hidden="true"> | </span>
+            Remaining cost: ${remainingEstimatedCost.toFixed(2)}
+          </p>
         </div>
       </div>
 

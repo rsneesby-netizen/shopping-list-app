@@ -1,0 +1,34 @@
+{
+  "stores": {
+    "woolworths-kotara": [
+      { "keywords": ["milk", "full cream milk"], "unit": "L", "unitPrice": 1.7, "regularUnitPrice": 1.9 },
+      { "keywords": ["bread", "wholemeal bread"], "unit": "each", "unitPrice": 3.4, "regularUnitPrice": 3.8 },
+      { "keywords": ["eggs"], "unit": "each", "unitPrice": 0.52, "regularUnitPrice": 0.58 },
+      { "keywords": ["banana", "bananas"], "unit": "kg", "unitPrice": 3.2, "regularUnitPrice": 3.8 },
+      { "keywords": ["chicken breast"], "unit": "kg", "unitPrice": 10.9, "regularUnitPrice": 12.5 }
+    ],
+    "coles-kotara": [
+      { "keywords": ["milk", "full cream milk"], "unit": "L", "unitPrice": 1.75, "regularUnitPrice": 1.95 },
+      { "keywords": ["bread", "wholemeal bread"], "unit": "each", "unitPrice": 3.2, "regularUnitPrice": 3.7 },
+      { "keywords": ["eggs"], "unit": "each", "unitPrice": 0.5, "regularUnitPrice": 0.56 },
+      { "keywords": ["banana", "bananas"], "unit": "kg", "unitPrice": 3.4, "regularUnitPrice": 3.9 },
+      { "keywords": ["chicken breast"], "unit": "kg", "unitPrice": 11.4, "regularUnitPrice": 12.8 }
+    ],
+    "coles-waratah": [
+      { "keywords": ["milk"], "unit": "L", "unitPrice": 1.78, "regularUnitPrice": 1.96 },
+      { "keywords": ["bread"], "unit": "each", "unitPrice": 3.3, "regularUnitPrice": 3.7 },
+      { "keywords": ["eggs"], "unit": "each", "unitPrice": 0.53, "regularUnitPrice": 0.58 }
+    ],
+    "aldi-kotara": [
+      { "keywords": ["milk"], "unit": "L", "unitPrice": 1.6, "regularUnitPrice": 1.8 },
+      { "keywords": ["bread"], "unit": "each", "unitPrice": 2.9, "regularUnitPrice": 3.2 },
+      { "keywords": ["eggs"], "unit": "each", "unitPrice": 0.48, "regularUnitPrice": 0.55 },
+      { "keywords": ["banana", "bananas"], "unit": "kg", "unitPrice": 2.9, "regularUnitPrice": 3.4 }
+    ],
+    "aldi-newcastle-west": [
+      { "keywords": ["milk"], "unit": "L", "unitPrice": 1.62, "regularUnitPrice": 1.82 },
+      { "keywords": ["bread"], "unit": "each", "unitPrice": 2.95, "regularUnitPrice": 3.25 },
+      { "keywords": ["eggs"], "unit": "each", "unitPrice": 0.49, "regularUnitPrice": 0.56 }
+    ]
+  }
+}
