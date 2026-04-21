@@ -19,14 +19,25 @@ import { useCallback, useEffect, useState } from 'react'
 import { categoryLabel } from '../../lib/categories'
 import type { StorePresetCategoryRow, StorePresetRow } from '../../types'
 
+function toCategoryKey(input: string): string {
+  const slug = input
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return slug || `category_${Date.now()}`
+}
+
 function SortableRow({
   id,
   nameValue,
   onNameChange,
+  onRemove,
 }: {
   id: string
   nameValue: string
   onNameChange: (categoryKey: string, value: string) => void
+  onRemove: (categoryKey: string) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id })
   const style = {
@@ -55,6 +66,14 @@ function SortableRow({
         onChange={(e) => onNameChange(id, e.target.value)}
         aria-label={`Name for ${id}`}
       />
+      <button
+        type="button"
+        className="min-h-8 rounded-[6px] border border-slate-200 px-2 text-xs text-slate-600 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
+        aria-label={`Remove ${nameValue || id}`}
+        onClick={() => onRemove(id)}
+      >
+        Remove
+      </button>
     </li>
   )
 }
@@ -105,6 +124,7 @@ export function CategoryOrderModal({
   )
   const [order, setOrder] = useState<string[]>([])
   const [labels, setLabels] = useState<Record<string, string>>({})
+  const [newCategoryName, setNewCategoryName] = useState('')
   const [saving, setSaving] = useState(false)
 
   const syncFromPreset = useCallback(
@@ -140,6 +160,30 @@ export function CategoryOrderModal({
 
   function onNameChange(categoryKey: string, value: string) {
     setLabels((prev) => ({ ...prev, [categoryKey]: value }))
+  }
+
+  function removeCategory(categoryKey: string) {
+    setOrder((prev) => prev.filter((k) => k !== categoryKey))
+    setLabels((prev) => {
+      const next = { ...prev }
+      delete next[categoryKey]
+      return next
+    })
+  }
+
+  function addCategory() {
+    const label = newCategoryName.trim()
+    if (!label) return
+    const keyBase = toCategoryKey(label)
+    let key = keyBase
+    let i = 2
+    while (order.includes(key)) {
+      key = `${keyBase}_${i}`
+      i += 1
+    }
+    setOrder((prev) => [...prev, key])
+    setLabels((prev) => ({ ...prev, [key]: label }))
+    setNewCategoryName('')
   }
 
   async function save() {
@@ -193,6 +237,30 @@ export function CategoryOrderModal({
           )}
         </div>
         <div className="max-h-[50vh] overflow-y-auto px-2 pb-2 pt-2">
+          {editingPresetId ? (
+            <div className="mb-2 flex gap-2 px-1">
+              <input
+                type="text"
+                className="min-h-8 min-w-0 flex-1 rounded-[6px] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-50"
+                placeholder="Add category name"
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    addCategory()
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="min-h-8 rounded-[6px] border border-slate-200 px-3 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                onClick={addCategory}
+              >
+                Add
+              </button>
+            </div>
+          ) : null}
           {editingPresetId && order.length ? (
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
               <SortableContext items={order} strategy={verticalListSortingStrategy}>
@@ -203,6 +271,7 @@ export function CategoryOrderModal({
                       id={id}
                       nameValue={labels[id] ?? categoryLabel(id)}
                       onNameChange={onNameChange}
+                      onRemove={removeCategory}
                     />
                   ))}
                 </ul>

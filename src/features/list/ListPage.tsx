@@ -181,7 +181,11 @@ export function ListPage() {
     return keys.length ? keys : listCategoryDefs().map((c) => c.key)
   }, [list, presetCats])
 
-  const categoryWalkOrder = useMemo(() => [...presetKeysOrdered], [presetKeysOrdered])
+  const categoryWalkOrder = useMemo(() => {
+    const out = [...presetKeysOrdered]
+    if (!out.includes('miscellaneous')) out.push('miscellaneous')
+    return out
+  }, [presetKeysOrdered])
 
   const headingForCategoryKey = useCallback(
     (key: string) => {
@@ -698,7 +702,7 @@ export function ListPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-full max-w-lg flex-col px-2 pb-24 pt-2 sm:px-3 sm:pb-28 sm:pt-3">
+    <div className="mx-auto flex min-h-full max-w-lg flex-col scroll-pb-[calc(15rem+env(safe-area-inset-bottom,0px))] px-2 pb-[calc(15rem+env(safe-area-inset-bottom,0px))] pt-2 sm:px-3 sm:pb-[calc(15rem+env(safe-area-inset-bottom,0px))] sm:pt-3">
       <header className="mb-2 flex flex-col gap-1.5 sm:mb-3 sm:gap-2">
         <div className="flex min-h-8 items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -991,7 +995,7 @@ export function ListPage() {
         </div>
       )}
 
-      <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-slate-200 bg-white/95 px-2 py-2 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 sm:px-3 sm:py-3">
+      <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-slate-200 bg-white/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 sm:px-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:pt-3">
         <div className="mx-auto flex max-w-lg flex-col gap-1.5 sm:gap-2">
           <div className="flex gap-1.5 sm:gap-2">
             <input
@@ -1172,16 +1176,22 @@ export function ListPage() {
               setError(err.message)
               return
             }
-            for (const key of payload.order) {
+            const labelRows = payload.order.map((key, idx) => {
               const raw = payload.labels[key] ?? ''
               const t = raw.trim()
               const def = categoryLabel(key)
               const labelOverride = !t || t === def ? null : t
+              return {
+                preset_id: payload.targetPresetId,
+                category_key: key,
+                sort_index: idx,
+                label_override: labelOverride,
+              }
+            })
+            if (labelRows.length) {
               const { error: uerr } = await supabase
                 .from('store_preset_categories')
-                .update({ label_override: labelOverride })
-                .eq('preset_id', payload.targetPresetId)
-                .eq('category_key', key)
+                .upsert(labelRows, { onConflict: 'preset_id,category_key' })
               if (uerr) {
                 setError(uerr.message)
                 return
