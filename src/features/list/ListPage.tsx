@@ -906,11 +906,12 @@ export function ListPage() {
     [items, list?.store_preset_id, presets, priceLearnings],
   )
 
-  /** Local estimate total for each store preset (for dropdown labels when comparing layouts). */
-  const estimatedTotalByStorePresetId = useMemo(() => {
+  /** Local remaining (unchecked) estimate per store preset for dropdown labels. */
+  const estimatedRemainingByStorePresetId = useMemo(() => {
+    const unchecked = items.filter((i) => !i.checked)
     const m = new Map<string, number>()
     for (const p of presets) {
-      m.set(p.id, estimateListPricing(items, p.id, presets, priceLearnings).totalEstimatedCost)
+      m.set(p.id, estimateListPricing(unchecked, p.id, presets, priceLearnings).totalEstimatedCost)
     }
     return m
   }, [items, presets, priceLearnings])
@@ -1066,7 +1067,7 @@ export function ListPage() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-h-8 min-w-[11rem] max-w-full flex-1 sm:max-w-[13.5rem] sm:flex-initial">
+          <div className="relative min-h-8 min-w-[calc(11rem+20px)] max-w-full flex-1 sm:max-w-[calc(13.5rem+20px)] sm:flex-initial">
             <label htmlFor="list-store-layout" className="sr-only">
               Store layout
             </label>
@@ -1079,7 +1080,7 @@ export function ListPage() {
             >
               {presets.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name} (${(estimatedTotalByStorePresetId.get(p.id) ?? 0).toFixed(2)})
+                  {p.name} (${(estimatedRemainingByStorePresetId.get(p.id) ?? 0).toFixed(2)})
                 </option>
               ))}
             </select>
