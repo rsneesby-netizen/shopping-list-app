@@ -55,6 +55,20 @@ export type ListItemEventRow = {
   created_at: string
 }
 
+/** Learned typical unit price per list + item fingerprint + store layout + unit (from calibrations over time). */
+export type ListPriceLearningRow = {
+  list_id: string
+  fingerprint: string
+  store_preset_id: string
+  unit: string
+  ema_unit_price_aud: number
+  sample_count: number
+  min_unit_price_aud: number
+  max_unit_price_aud: number
+  last_obs_unit_price_aud: number
+  updated_at: string
+}
+
 /** Per-list remembered category for an item fingerprint (normalized text). */
 export type ListCategoryLearningRow = {
   list_id: string

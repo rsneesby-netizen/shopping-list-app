@@ -1,8 +1,11 @@
 import pricingSeed from '../data/pricingSeed.json'
-import type { ListItemRow, StorePresetRow } from '../types'
+import type { ListItemRow, ListPriceLearningRow, StorePresetRow } from '../types'
 import { calibratedLineCostAud, parsePriceCalibration } from './priceCalibration'
+import { crossStoreLineHint, learningDealStripe, priceLearningMapKey } from './priceLearnings'
+import { fingerprintFromText } from './normalize'
 import type { PricingEstimateRequest, PricingEstimateResponse } from './pricingContract'
 import { fetchRemotePricingEstimate } from './pricingRemote'
+import { chainFallbackMultiplier, storeChainFromSlug } from './storeChain'
 import { normalizeUnit } from './units'
 
 type CatalogRow = {
@@ -35,16 +38,6 @@ function normalizeText(s: string) {
   return s.trim().toLowerCase()
 }
 
-/** Infer retail chain from a store preset slug for fallback pricing and catalog borrowing. */
-function storeChainFromSlug(slug: string | null): 'aldi' | 'coles' | 'woolworths' | 'neutral' {
-  if (!slug) return 'neutral'
-  const s = slug.toLowerCase()
-  if (s.includes('aldi')) return 'aldi'
-  if (s.includes('woolworths') || s.includes('woolies')) return 'woolworths'
-  if (s.includes('coles')) return 'coles'
-  return 'neutral'
-}
-
 /**
  * Heuristic unit price when nothing in the seed catalog matches. Scales by chain so Aldi is lower than Coles,
  * and Woolworths is a touch higher (typical AU positioning).
@@ -56,9 +49,7 @@ function fallbackUnitPrice(unit: string, slug: string | null) {
   else if (u === 'L') base = 2.2
   else if (u === 'kg') base = 6.5
   else base = 2
-  const chain = storeChainFromSlug(slug)
-  const mult = chain === 'aldi' ? 0.84 : chain === 'coles' ? 0.95 : chain === 'woolworths' ? 1.04 : 0.98
-  return base * mult
+  return base * chainFallbackMultiplier(slug)
 }
 
 function resolveStoreSlug(storePresetId: string | null, presets: StorePresetRow[]) {
@@ -160,11 +151,18 @@ function mergeRemoteWithLocal(
   remote: PricingEstimateResponse | null,
   local: ListPriceEstimate,
   listItems: ListItemRow[],
+  storePresetId: string | null,
+  priceLearnings: ListPriceLearningRow[],
 ): ListPriceEstimate {
   if (!remote?.items?.length) return local
 
   const byId = new Map(remote.items.map((r) => [r.itemId, r]))
   const itemById = new Map(listItems.map((i) => [i.id, i]))
+  const learningByKey = new Map<string, ListPriceLearningRow>()
+  for (const row of priceLearnings) {
+    learningByKey.set(priceLearningMapKey(row.fingerprint, row.store_preset_id, row.unit), row)
+  }
+
   let remoteUsed = 0
   const items: Record<string, ItemPriceEstimate> = {}
   let total = 0
@@ -186,6 +184,20 @@ function mergeRemoteWithLocal(
     const calCost = row ? calibratedLineCostAud(row, parsePriceCalibration(row.price_calibration)) : null
     if (calCost !== null) {
       items[id] = { ...items[id], estimatedCost: calCost, confidence: 'high', onSpecial: false }
+    } else if (row && storePresetId) {
+      const fp = fingerprintFromText(row.text)
+      const unit = normalizeUnit(row.unit)
+      const qty = Math.max(0, Number(row.quantity) || 0)
+      const own = learningByKey.get(priceLearningMapKey(fp, storePresetId, unit))
+      if (own && own.sample_count >= 1 && qty > 0) {
+        const lineCost = Math.round(own.ema_unit_price_aud * qty * 100) / 100
+        items[id] = {
+          itemId: id,
+          estimatedCost: lineCost,
+          onSpecial: learningDealStripe(own),
+          confidence: 'high',
+        }
+      }
     }
     total += items[id].estimatedCost
   }
@@ -210,30 +222,81 @@ export function estimateListPricing(
   items: ListItemRow[],
   storePresetId: string | null,
   presets: StorePresetRow[],
+  priceLearnings: ListPriceLearningRow[] = [],
 ): ListPriceEstimate {
   const seed = pricingSeed as SeedShape
   const slug = resolveStoreSlug(storePresetId, presets)
   const rows = resolveCatalogRows(seed, slug)
+  const learningByKey = new Map<string, ListPriceLearningRow>()
+  for (const row of priceLearnings) {
+    learningByKey.set(priceLearningMapKey(row.fingerprint, row.store_preset_id, row.unit), row)
+  }
+
   const map: Record<string, ItemPriceEstimate> = {}
   let total = 0
+  let usedOwnLearning = false
+  let usedCrossHint = false
 
   for (const item of items) {
     const base = estimateItemCostFromCatalog(item, rows, slug)
     const calCost = calibratedLineCostAud(item, parsePriceCalibration(item.price_calibration))
-    const est =
-      calCost !== null
-        ? { ...base, estimatedCost: calCost, confidence: 'high' as const, onSpecial: false }
-        : base
+    if (calCost !== null) {
+      map[item.id] = { ...base, estimatedCost: calCost, confidence: 'high', onSpecial: false }
+      total += map[item.id].estimatedCost
+      continue
+    }
+
+    const fp = fingerprintFromText(item.text)
+    const unit = normalizeUnit(item.unit)
+    const qty = Math.max(0, Number(item.quantity) || 0)
+    let est: ItemPriceEstimate = { ...base }
+
+    if (storePresetId && qty > 0) {
+      const key = priceLearningMapKey(fp, storePresetId, unit)
+      const own = learningByKey.get(key)
+      if (own && own.sample_count >= 1) {
+        const lineCost = Math.round(own.ema_unit_price_aud * qty * 100) / 100
+        est = {
+          itemId: item.id,
+          estimatedCost: lineCost,
+          onSpecial: learningDealStripe(own),
+          confidence: 'high',
+        }
+        usedOwnLearning = true
+      } else {
+        const hint = crossStoreLineHint(
+          fp,
+          unit,
+          qty,
+          storePresetId,
+          base.estimatedCost,
+          priceLearnings,
+          presets,
+        )
+        if (hint) {
+          est = {
+            itemId: item.id,
+            estimatedCost: hint.lineCost,
+            onSpecial: hint.onSpecial,
+            confidence: hint.confidence,
+          }
+          usedCrossHint = true
+        }
+      }
+    }
+
     map[item.id] = est
     total += est.estimatedCost
   }
 
-  const baseLabel = rows?.length ? 'Seeded store pricing estimate' : 'Fallback estimate'
+  let baseLabel = rows?.length ? 'Seeded store pricing estimate' : 'Fallback estimate'
+  if (usedOwnLearning) baseLabel = `${baseLabel} · learned typical`
+  else if (usedCrossHint) baseLabel = `${baseLabel} · other-store hint`
   const anyCal = items.some((i) => parsePriceCalibration(i.price_calibration))
   return {
     totalEstimatedCost: total,
     items: map,
-    sourceLabel: anyCal ? `${baseLabel} · your prices` : baseLabel,
+    sourceLabel: anyCal ? `${baseLabel} · line prices` : baseLabel,
   }
 }
 
@@ -244,9 +307,10 @@ export async function fetchMergedListPricing(
   items: ListItemRow[],
   storePresetId: string | null,
   presets: StorePresetRow[],
+  priceLearnings: ListPriceLearningRow[] = [],
 ): Promise<ListPriceEstimate> {
-  const local = estimateListPricing(items, storePresetId, presets)
+  const local = estimateListPricing(items, storePresetId, presets, priceLearnings)
   const req = buildPricingRequest(items, storePresetId, presets)
   const remote = await fetchRemotePricingEstimate(req)
-  return mergeRemoteWithLocal(remote, local, items)
+  return mergeRemoteWithLocal(remote, local, items, storePresetId, priceLearnings)
 }

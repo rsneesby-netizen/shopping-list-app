@@ -16,6 +16,7 @@ import { categoryForNewItem } from '../../lib/categoryLearning'
 import { logListItemEvent } from '../../lib/events'
 import { fingerprintFromText } from '../../lib/normalize'
 import { parsePriceCalibration } from '../../lib/priceCalibration'
+import { upsertPriceLearningFromCalibration } from '../../lib/priceLearningDb'
 import { estimateListPricing, fetchMergedListPricing, type ListPriceEstimate } from '../../lib/pricing'
 import { keyAfterLast, keyAfterReorder, sortByPosition } from '../../lib/positions'
 import { buildSuggestions } from '../../lib/recommendations'
@@ -39,6 +40,7 @@ import type {
   ListItemEventRow,
   ListItemRow,
   ListRow,
+  ListPriceLearningRow,
   PriceCalibrationV1,
   StorePresetCategoryRow,
   StorePresetRow,
@@ -66,6 +68,7 @@ export function ListPage() {
   const [presetCats, setPresetCats] = useState<StorePresetCategoryRow[]>([])
   /** fingerprint → category_key for this list (from DB + local updates) */
   const [categoryLearnings, setCategoryLearnings] = useState<Record<string, string>>({})
+  const [priceLearnings, setPriceLearnings] = useState<ListPriceLearningRow[]>([])
   const [events, setEvents] = useState<ListItemEventRow[]>([])
   const [title, setTitle] = useState('')
   const [newText, setNewText] = useState('')
@@ -101,16 +104,19 @@ export function ListPage() {
       { data: its, error: e2 },
       { data: evs, error: e3 },
       { data: learnRows, error: e4 },
+      { data: priceRows, error: e5 },
     ] = await Promise.all([
       supabase.from('lists').select('*').eq('id', listId).maybeSingle(),
       supabase.from('list_items').select('*').eq('list_id', listId),
       supabase.from('list_item_events').select('*').eq('list_id', listId).order('created_at', { ascending: false }).limit(800),
       supabase.from('list_category_learnings').select('fingerprint, category_key').eq('list_id', listId),
+      supabase.from('list_price_learnings').select('*').eq('list_id', listId),
     ])
     if (e1) throw e1
     if (e2) throw e2
     if (e3) throw e3
     if (e4) throw e4
+    if (e5) throw e5
     setList(l as ListRow)
     setTitle((l as ListRow | null)?.title ?? '')
     setItems(sortByPosition((its ?? []) as ListItemRow[]))
@@ -121,6 +127,7 @@ export function ListPage() {
       nextLearn[row.fingerprint] = row.category_key
     }
     setCategoryLearnings(nextLearn)
+    setPriceLearnings((priceRows ?? []) as ListPriceLearningRow[])
   }, [listId, supabase])
 
   const refreshEvents = useCallback(async () => {
@@ -207,6 +214,19 @@ export function ListPage() {
         (payload) => {
           setList(payload.new as ListRow)
           setTitle((payload.new as ListRow).title)
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'list_price_learnings', filter: `list_id=eq.${listId}` },
+        () => {
+          void supabase
+            .from('list_price_learnings')
+            .select('*')
+            .eq('list_id', listId)
+            .then(({ data, error }) => {
+              if (!error && data) setPriceLearnings(data as ListPriceLearningRow[])
+            })
         },
       )
       .subscribe()
@@ -625,6 +645,19 @@ export function ListPage() {
             fingerprint: fp,
             payload: { text: current.text, cal },
           })
+          const sid = list?.store_preset_id
+          if (sid && listId) {
+            try {
+              await upsertPriceLearningFromCalibration(supabase, {
+                listId,
+                storePresetId: sid,
+                fingerprint: fp,
+                cal,
+              })
+            } catch (learnErr) {
+              console.warn('list_price_learnings upsert', learnErr)
+            }
+          }
         },
         revert: async () => {
           const { error: err } = await supabase
@@ -634,6 +667,8 @@ export function ListPage() {
           if (err) throw err
         },
       })
+      const { data: plRows } = await supabase.from('list_price_learnings').select('*').eq('list_id', listId)
+      if (plRows) setPriceLearnings(plRows as ListPriceLearningRow[])
     } catch (e: unknown) {
       setItems((p) => {
         const next = p.map((i) => (i.id === id ? { ...i, price_calibration: prevCal } : i))
@@ -861,8 +896,8 @@ export function ListPage() {
   }, [activeSorted, categoryWalkOrder])
 
   const localPricing = useMemo(
-    () => estimateListPricing(items, list?.store_preset_id ?? null, presets),
-    [items, list?.store_preset_id, presets],
+    () => estimateListPricing(items, list?.store_preset_id ?? null, presets, priceLearnings),
+    [items, list?.store_preset_id, presets, priceLearnings],
   )
 
   const pricingFetchKey = useMemo(
@@ -872,22 +907,28 @@ export function ListPage() {
           (i) =>
             `${i.id}:${i.quantity}:${normalizeUnit(i.unit)}:${i.text}:${i.checked ? '1' : '0'}:${JSON.stringify(i.price_calibration ?? null)}`,
         )
-        .join('|')}`,
-    [items, list?.store_preset_id, presets],
+        .join('|')}|PL:${priceLearnings
+        .map(
+          (r) =>
+            `${r.fingerprint}:${r.store_preset_id}:${normalizeUnit(r.unit)}:${r.ema_unit_price_aud}:${r.sample_count}:${r.last_obs_unit_price_aud}`,
+        )
+        .sort()
+        .join(';')}`,
+    [items, list?.store_preset_id, presets, priceLearnings],
   )
 
   const [mergedPricing, setMergedPricing] = useState<{ key: string; estimate: ListPriceEstimate } | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    void fetchMergedListPricing(items, list?.store_preset_id ?? null, presets).then((estimate) => {
+    void fetchMergedListPricing(items, list?.store_preset_id ?? null, presets, priceLearnings).then((estimate) => {
       if (cancelled) return
       setMergedPricing({ key: pricingFetchKey, estimate })
     })
     return () => {
       cancelled = true
     }
-  }, [pricingFetchKey, items, list?.store_preset_id, presets])
+  }, [pricingFetchKey, items, list?.store_preset_id, presets, priceLearnings])
 
   const pricing = mergedPricing?.key === pricingFetchKey ? mergedPricing.estimate : localPricing
 
