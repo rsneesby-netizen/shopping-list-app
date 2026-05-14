@@ -115,19 +115,25 @@ export function ListPage() {
     if (e1) throw e1
     if (e2) throw e2
     if (e3) throw e3
-    if (e4) throw e4
-    if (e5) throw e5
+    if (e4) {
+      console.warn('list_category_learnings unavailable (run migrations if missing):', e4.message)
+    }
+    if (e5) {
+      console.warn('list_price_learnings unavailable (run migrations if missing):', e5.message)
+    }
     setList(l as ListRow)
     setTitle((l as ListRow | null)?.title ?? '')
     setItems(sortByPosition((its ?? []) as ListItemRow[]))
     const evRows = (evs ?? []) as ListItemEventRow[]
     setEvents(evRows)
     const nextLearn: Record<string, string> = {}
-    for (const row of (learnRows ?? []) as Pick<ListCategoryLearningRow, 'fingerprint' | 'category_key'>[]) {
-      nextLearn[row.fingerprint] = row.category_key
+    if (!e4) {
+      for (const row of (learnRows ?? []) as Pick<ListCategoryLearningRow, 'fingerprint' | 'category_key'>[]) {
+        nextLearn[row.fingerprint] = row.category_key
+      }
     }
     setCategoryLearnings(nextLearn)
-    setPriceLearnings((priceRows ?? []) as ListPriceLearningRow[])
+    setPriceLearnings(e5 ? [] : ((priceRows ?? []) as ListPriceLearningRow[]))
   }, [listId, supabase])
 
   const refreshEvents = useCallback(async () => {
