@@ -906,6 +906,15 @@ export function ListPage() {
     [items, list?.store_preset_id, presets, priceLearnings],
   )
 
+  /** Local estimate total for each store preset (for dropdown labels when comparing layouts). */
+  const estimatedTotalByStorePresetId = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const p of presets) {
+      m.set(p.id, estimateListPricing(items, p.id, presets, priceLearnings).totalEstimatedCost)
+    }
+    return m
+  }, [items, presets, priceLearnings])
+
   const pricingFetchKey = useMemo(
     () =>
       `${list?.store_preset_id ?? ''}:${presets.map((p) => `${p.id}:${p.slug}`).join(',')}:${items
@@ -1070,7 +1079,7 @@ export function ListPage() {
             >
               {presets.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name}
+                  {p.name} (${(estimatedTotalByStorePresetId.get(p.id) ?? 0).toFixed(2)})
                 </option>
               ))}
             </select>
