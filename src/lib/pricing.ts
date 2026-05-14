@@ -1,8 +1,9 @@
 import pricingSeed from '../data/pricingSeed.json'
+import type { ListItemRow, StorePresetRow } from '../types'
+import { calibratedLineCostAud, parsePriceCalibration } from './priceCalibration'
 import type { PricingEstimateRequest, PricingEstimateResponse } from './pricingContract'
 import { fetchRemotePricingEstimate } from './pricingRemote'
 import { normalizeUnit } from './units'
-import type { ListItemRow, StorePresetRow } from '../types'
 
 type CatalogRow = {
   keywords: string[]
@@ -13,6 +14,8 @@ type CatalogRow = {
 
 type SeedShape = {
   stores: Record<string, CatalogRow[]>
+  /** Map preset slug → catalog slug when the short slug has no rows (e.g. legacy "woolworths"). */
+  catalogSlugAliases?: Record<string, string>
 }
 
 export type ItemPriceEstimate = {
@@ -32,12 +35,30 @@ function normalizeText(s: string) {
   return s.trim().toLowerCase()
 }
 
-function fallbackUnitPrice(unit: string) {
+/** Infer retail chain from a store preset slug for fallback pricing and catalog borrowing. */
+function storeChainFromSlug(slug: string | null): 'aldi' | 'coles' | 'woolworths' | 'neutral' {
+  if (!slug) return 'neutral'
+  const s = slug.toLowerCase()
+  if (s.includes('aldi')) return 'aldi'
+  if (s.includes('woolworths') || s.includes('woolies')) return 'woolworths'
+  if (s.includes('coles')) return 'coles'
+  return 'neutral'
+}
+
+/**
+ * Heuristic unit price when nothing in the seed catalog matches. Scales by chain so Aldi is lower than Coles,
+ * and Woolworths is a touch higher (typical AU positioning).
+ */
+function fallbackUnitPrice(unit: string, slug: string | null) {
   const u = normalizeUnit(unit)
-  if (u === 'each') return 1.8
-  if (u === 'L') return 2.2
-  if (u === 'kg') return 6.5
-  return 2
+  let base: number
+  if (u === 'each') base = 1.8
+  else if (u === 'L') base = 2.2
+  else if (u === 'kg') base = 6.5
+  else base = 2
+  const chain = storeChainFromSlug(slug)
+  const mult = chain === 'aldi' ? 0.84 : chain === 'coles' ? 0.95 : chain === 'woolworths' ? 1.04 : 0.98
+  return base * mult
 }
 
 function resolveStoreSlug(storePresetId: string | null, presets: StorePresetRow[]) {
@@ -45,7 +66,21 @@ function resolveStoreSlug(storePresetId: string | null, presets: StorePresetRow[
   return presets.find((p) => p.id === storePresetId)?.slug ?? null
 }
 
-function estimateItemCostFromCatalog(item: ListItemRow, rows: CatalogRow[] | undefined): ItemPriceEstimate {
+/** Pick keyword catalog rows for this preset: exact slug, configured alias, then same-chain default layout. */
+function resolveCatalogRows(seed: SeedShape, slug: string | null): CatalogRow[] | undefined {
+  if (!slug) return undefined
+  const direct = seed.stores[slug]
+  if (direct?.length) return direct
+  const alias = seed.catalogSlugAliases?.[slug]
+  if (alias && seed.stores[alias]?.length) return seed.stores[alias]
+  const chain = storeChainFromSlug(slug)
+  if (chain === 'aldi' && seed.stores['aldi-kotara']?.length) return seed.stores['aldi-kotara']
+  if (chain === 'woolworths' && seed.stores['woolworths-kotara']?.length) return seed.stores['woolworths-kotara']
+  if (chain === 'coles' && seed.stores['coles-kotara']?.length) return seed.stores['coles-kotara']
+  return undefined
+}
+
+function estimateItemCostFromCatalog(item: ListItemRow, rows: CatalogRow[] | undefined, slug: string | null): ItemPriceEstimate {
   const text = normalizeText(item.text)
   const unit = normalizeUnit(item.unit)
   let matched: CatalogRow | null = null
@@ -57,7 +92,7 @@ function estimateItemCostFromCatalog(item: ListItemRow, rows: CatalogRow[] | und
   }
 
   if (!matched) {
-    const fallback = fallbackUnitPrice(unit) * Math.max(0, Number(item.quantity) || 0)
+    const fallback = fallbackUnitPrice(unit, slug) * Math.max(0, Number(item.quantity) || 0)
     return {
       itemId: item.id,
       estimatedCost: fallback,
@@ -75,6 +110,32 @@ function estimateItemCostFromCatalog(item: ListItemRow, rows: CatalogRow[] | und
     onSpecial: matched.unitPrice < regular,
     confidence: normalizeUnit(matched.unit) === unit ? 'high' : 'medium',
   }
+}
+
+/** Local seed-based line total for a hypothetical item (recommendations drawer). */
+export function estimateSuggestionLineCost(
+  displayText: string,
+  quantity: number,
+  unit: string,
+  storePresetId: string | null,
+  presets: StorePresetRow[],
+): number {
+  const seed = pricingSeed as SeedShape
+  const slug = resolveStoreSlug(storePresetId, presets)
+  const rows = resolveCatalogRows(seed, slug)
+  const fake: ListItemRow = {
+    id: '__suggestion__',
+    list_id: '',
+    text: displayText,
+    quantity: Math.max(0, Number(quantity) || 0),
+    unit: normalizeUnit(unit),
+    checked: false,
+    position: 'a',
+    category_key: null,
+    created_by: null,
+    updated_at: new Date().toISOString(),
+  }
+  return estimateItemCostFromCatalog(fake, rows, slug).estimatedCost
 }
 
 function buildPricingRequest(
@@ -95,10 +156,15 @@ function buildPricingRequest(
   }
 }
 
-function mergeRemoteWithLocal(remote: PricingEstimateResponse | null, local: ListPriceEstimate): ListPriceEstimate {
+function mergeRemoteWithLocal(
+  remote: PricingEstimateResponse | null,
+  local: ListPriceEstimate,
+  listItems: ListItemRow[],
+): ListPriceEstimate {
   if (!remote?.items?.length) return local
 
   const byId = new Map(remote.items.map((r) => [r.itemId, r]))
+  const itemById = new Map(listItems.map((i) => [i.id, i]))
   let remoteUsed = 0
   const items: Record<string, ItemPriceEstimate> = {}
   let total = 0
@@ -115,6 +181,11 @@ function mergeRemoteWithLocal(remote: PricingEstimateResponse | null, local: Lis
       }
     } else {
       items[id] = loc
+    }
+    const row = itemById.get(id)
+    const calCost = row ? calibratedLineCostAud(row, parsePriceCalibration(row.price_calibration)) : null
+    if (calCost !== null) {
+      items[id] = { ...items[id], estimatedCost: calCost, confidence: 'high', onSpecial: false }
     }
     total += items[id].estimatedCost
   }
@@ -142,20 +213,27 @@ export function estimateListPricing(
 ): ListPriceEstimate {
   const seed = pricingSeed as SeedShape
   const slug = resolveStoreSlug(storePresetId, presets)
-  const rows = slug ? seed.stores[slug] : undefined
+  const rows = resolveCatalogRows(seed, slug)
   const map: Record<string, ItemPriceEstimate> = {}
   let total = 0
 
   for (const item of items) {
-    const est = estimateItemCostFromCatalog(item, rows)
+    const base = estimateItemCostFromCatalog(item, rows, slug)
+    const calCost = calibratedLineCostAud(item, parsePriceCalibration(item.price_calibration))
+    const est =
+      calCost !== null
+        ? { ...base, estimatedCost: calCost, confidence: 'high' as const, onSpecial: false }
+        : base
     map[item.id] = est
     total += est.estimatedCost
   }
 
+  const baseLabel = rows?.length ? 'Seeded store pricing estimate' : 'Fallback estimate'
+  const anyCal = items.some((i) => parsePriceCalibration(i.price_calibration))
   return {
     totalEstimatedCost: total,
     items: map,
-    sourceLabel: rows?.length ? 'Seeded store pricing estimate' : 'Fallback estimate',
+    sourceLabel: anyCal ? `${baseLabel} · your prices` : baseLabel,
   }
 }
 
@@ -170,5 +248,5 @@ export async function fetchMergedListPricing(
   const local = estimateListPricing(items, storePresetId, presets)
   const req = buildPricingRequest(items, storePresetId, presets)
   const remote = await fetchRemotePricingEstimate(req)
-  return mergeRemoteWithLocal(remote, local)
+  return mergeRemoteWithLocal(remote, local, items)
 }

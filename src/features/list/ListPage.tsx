@@ -12,8 +12,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useUndoRedo } from '../../hooks/useUndoRedo'
 import { categoryDisplayLabel, categoryLabel, inferCategoryKey, listCategoryDefs } from '../../lib/categories'
+import { categoryForNewItem } from '../../lib/categoryLearning'
 import { logListItemEvent } from '../../lib/events'
 import { fingerprintFromText } from '../../lib/normalize'
+import { parsePriceCalibration } from '../../lib/priceCalibration'
 import { estimateListPricing, fetchMergedListPricing, type ListPriceEstimate } from '../../lib/pricing'
 import { keyAfterLast, keyAfterReorder, sortByPosition } from '../../lib/positions'
 import { buildSuggestions } from '../../lib/recommendations'
@@ -32,10 +34,20 @@ import {
   UNIT_OPTIONS,
 } from '../../lib/units'
 import { getSupabase } from '../../lib/supabase'
-import type { ListItemEventRow, ListItemRow, ListRow, StorePresetCategoryRow, StorePresetRow } from '../../types'
+import type {
+  ListCategoryLearningRow,
+  ListItemEventRow,
+  ListItemRow,
+  ListRow,
+  PriceCalibrationV1,
+  StorePresetCategoryRow,
+  StorePresetRow,
+} from '../../types'
 import { CategoryOrderModal } from './CategoryOrderModal'
-import { RecommendationsDrawer } from './RecommendationsDrawer'
+import { PriceCalibrationModal } from './PriceCalibrationModal'
+import { RecommendationsDrawer, type RecommendationBatchRow } from './RecommendationsDrawer'
 import { SortableItem } from './SortableItem'
+import { StoresManageModal } from './StoresManageModal'
 import { BackToListsIcon, GroupCollapseChevronIcon, GroupExpandChevronIcon } from './listIcons'
 import { ToolbarIconMore, ToolbarIconRecommended, ToolbarIconRedo, ToolbarIconUndo } from './toolbarIcons'
 
@@ -49,8 +61,11 @@ export function ListPage() {
 
   const [list, setList] = useState<ListRow | null>(null)
   const [items, setItems] = useState<ListItemRow[]>([])
+  const itemsRef = useRef(items)
   const [presets, setPresets] = useState<StorePresetRow[]>([])
   const [presetCats, setPresetCats] = useState<StorePresetCategoryRow[]>([])
+  /** fingerprint → category_key for this list (from DB + local updates) */
+  const [categoryLearnings, setCategoryLearnings] = useState<Record<string, string>>({})
   const [events, setEvents] = useState<ListItemEventRow[]>([])
   const [title, setTitle] = useState('')
   const [newText, setNewText] = useState('')
@@ -61,6 +76,7 @@ export function ListPage() {
   const [view, setView] = useState<'flat' | 'grouped'>('flat')
   const [recOpen, setRecOpen] = useState(false)
   const [catOpen, setCatOpen] = useState(false)
+  const [storesOpen, setStoresOpen] = useState(false)
   const [actionsOpen, setActionsOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [inviteUrl, setInviteUrl] = useState<string | null>(null)
@@ -69,6 +85,8 @@ export function ListPage() {
   const [categoryTargetKey, setCategoryTargetKey] = useState<string>('miscellaneous')
   /** When true, category group body is hidden */
   const [collapsedCategoryKeys, setCollapsedCategoryKeys] = useState<Record<string, boolean>>({})
+  /** Item id when "your price" sheet is open */
+  const [priceCalItemId, setPriceCalItemId] = useState<string | null>(null)
   const actionsMenuRef = useRef<HTMLDivElement | null>(null)
 
   const sensors = useSensors(
@@ -78,33 +96,70 @@ export function ListPage() {
 
   const refreshAll = useCallback(async () => {
     if (!listId) return
-    const [{ data: l, error: e1 }, { data: its, error: e2 }, { data: evs, error: e3 }] = await Promise.all([
+    const [
+      { data: l, error: e1 },
+      { data: its, error: e2 },
+      { data: evs, error: e3 },
+      { data: learnRows, error: e4 },
+    ] = await Promise.all([
       supabase.from('lists').select('*').eq('id', listId).maybeSingle(),
       supabase.from('list_items').select('*').eq('list_id', listId),
       supabase.from('list_item_events').select('*').eq('list_id', listId).order('created_at', { ascending: false }).limit(800),
+      supabase.from('list_category_learnings').select('fingerprint, category_key').eq('list_id', listId),
     ])
     if (e1) throw e1
     if (e2) throw e2
     if (e3) throw e3
+    if (e4) throw e4
     setList(l as ListRow)
     setTitle((l as ListRow | null)?.title ?? '')
     setItems(sortByPosition((its ?? []) as ListItemRow[]))
+    const evRows = (evs ?? []) as ListItemEventRow[]
+    setEvents(evRows)
+    const nextLearn: Record<string, string> = {}
+    for (const row of (learnRows ?? []) as Pick<ListCategoryLearningRow, 'fingerprint' | 'category_key'>[]) {
+      nextLearn[row.fingerprint] = row.category_key
+    }
+    setCategoryLearnings(nextLearn)
+  }, [listId, supabase])
+
+  const refreshEvents = useCallback(async () => {
+    if (!listId) return
+    const { data: evs, error: err } = await supabase
+      .from('list_item_events')
+      .select('*')
+      .eq('list_id', listId)
+      .order('created_at', { ascending: false })
+      .limit(800)
+    if (err) {
+      setError(err.message)
+      return
+    }
     setEvents((evs ?? []) as ListItemEventRow[])
   }, [listId, supabase])
+
+  useEffect(() => {
+    itemsRef.current = items
+  }, [items])
+
+  const refreshStoreCatalog = useCallback(async () => {
+    const [{ data: presetRows, error: e1 }, { data: pcRows, error: e2 }] = await Promise.all([
+      supabase.from('store_presets').select('*').order('name'),
+      supabase.from('store_preset_categories').select('*').order('sort_index'),
+    ])
+    if (e1) throw e1
+    if (e2) throw e2
+    setPresets(filterStoreLayouts((presetRows ?? []) as StorePresetRow[]))
+    setPresetCats((pcRows ?? []) as StorePresetCategoryRow[])
+  }, [supabase])
 
   useEffect(() => {
     if (!listId) return
     let cancelled = false
     ;(async () => {
       try {
-        const [{ data: presetRows }, { data: pcRows }] = await Promise.all([
-          supabase.from('store_presets').select('*').order('name'),
-          supabase.from('store_preset_categories').select('*').order('sort_index'),
-        ])
-        if (!cancelled) {
-          setPresets(filterStoreLayouts((presetRows ?? []) as StorePresetRow[]))
-          setPresetCats((pcRows ?? []) as StorePresetCategoryRow[])
-        }
+        await refreshStoreCatalog()
+        if (cancelled) return
         await refreshAll()
       } catch (e: unknown) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load')
@@ -113,7 +168,7 @@ export function ListPage() {
     return () => {
       cancelled = true
     }
-  }, [listId, refreshAll, supabase])
+  }, [listId, refreshAll, refreshStoreCatalog, supabase])
 
   useEffect(() => {
     if (!listId) return
@@ -251,8 +306,8 @@ export function ListPage() {
     const q = clampQuantityForUnit(u, qty)
     if (q === null) return
     const fp = fingerprintFromText(trimmed)
-    const cat = inferCategoryKey(trimmed, null)
-    const activePositions = sortByPosition(items.filter((i) => !i.checked)).map((i) => i.position)
+    const cat = categoryForNewItem(trimmed, fp, categoryLearnings, presetKeysOrdered)
+    const activePositions = sortByPosition(itemsRef.current.filter((i) => !i.checked)).map((i) => i.position)
     const position = keyAfterLast(activePositions)
     let createdId: string | null = null
     setError(null)
@@ -276,7 +331,9 @@ export function ListPage() {
           createdId = data.id
           setItems((prev) => {
             if (prev.some((i) => i.id === data.id)) return prev
-            return sortByPosition([...prev, data as ListItemRow])
+            const merged = sortByPosition([...prev, data as ListItemRow])
+            itemsRef.current = merged
+            return merged
           })
           void logListItemEvent(supabase, {
             listId,
@@ -294,6 +351,7 @@ export function ListPage() {
       })
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Could not add item')
+      throw e
     }
   }
 
@@ -354,12 +412,16 @@ export function ListPage() {
       qty = p
     }
     const fp = fingerprintFromText(newText)
-    const alreadyExists = items.some((i) => fingerprintFromText(i.text) === fp)
+    const alreadyExists = items.some((i) => !i.checked && fingerprintFromText(i.text) === fp)
     if (alreadyExists) {
       setPendingDuplicateAdd({ text: newText, qty, unit: u })
       return
     }
-    await insertItem(newText, qty, u)
+    try {
+      await insertItem(newText, qty, u)
+    } catch {
+      return
+    }
     setNewText('')
     setNewQty(1)
     setNewQtyText('1')
@@ -397,6 +459,7 @@ export function ListPage() {
             position: snap.position,
             category_key: snap.category_key,
             created_by: snap.created_by,
+            price_calibration: snap.price_calibration ?? null,
           })
           if (err) throw err
         },
@@ -432,6 +495,7 @@ export function ListPage() {
               position: snap.position,
               category_key: snap.category_key,
               created_by: snap.created_by,
+              price_calibration: snap.price_calibration ?? null,
             })),
           )
           if (err) throw err
@@ -509,7 +573,11 @@ export function ListPage() {
     const u = normalizeUnit(current.unit)
     const q = clampQuantityForUnit(u, quantity)
     if (q === null) return
-    setItems((p) => p.map((i) => (i.id === id ? { ...i, quantity: q } : i)))
+    setItems((p) => {
+      const next = p.map((i) => (i.id === id ? { ...i, quantity: q } : i))
+      itemsRef.current = next
+      return next
+    })
     try {
       await push({
         apply: async () => {
@@ -534,6 +602,91 @@ export function ListPage() {
     }
   }
 
+  async function savePriceCalibration(id: string, cal: PriceCalibrationV1) {
+    if (!listId) return
+    const current = items.find((i) => i.id === id)
+    if (!current) return
+    const prevCal = current.price_calibration ?? null
+    const fp = fingerprintFromText(current.text)
+    setItems((p) => {
+      const next = p.map((i) => (i.id === id ? { ...i, price_calibration: cal } : i))
+      itemsRef.current = next
+      return next
+    })
+    try {
+      await push({
+        apply: async () => {
+          const { error: err } = await supabase.from('list_items').update({ price_calibration: cal }).eq('id', id)
+          if (err) throw err
+          void logListItemEvent(supabase, {
+            listId,
+            itemId: id,
+            eventType: 'price_calibration_set',
+            fingerprint: fp,
+            payload: { text: current.text, cal },
+          })
+        },
+        revert: async () => {
+          const { error: err } = await supabase
+            .from('list_items')
+            .update({ price_calibration: prevCal })
+            .eq('id', id)
+          if (err) throw err
+        },
+      })
+    } catch (e: unknown) {
+      setItems((p) => {
+        const next = p.map((i) => (i.id === id ? { ...i, price_calibration: prevCal } : i))
+        itemsRef.current = next
+        return next
+      })
+      setError(e instanceof Error ? e.message : 'Update failed')
+    }
+  }
+
+  async function clearPriceCalibration(id: string) {
+    if (!listId) return
+    const current = items.find((i) => i.id === id)
+    if (!current) return
+    const prevCal = current.price_calibration ?? null
+    if (prevCal == null) return
+    const fp = fingerprintFromText(current.text)
+    setItems((p) => {
+      const next = p.map((i) => (i.id === id ? { ...i, price_calibration: null } : i))
+      itemsRef.current = next
+      return next
+    })
+    try {
+      await push({
+        apply: async () => {
+          const { error: err } = await supabase.from('list_items').update({ price_calibration: null }).eq('id', id)
+          if (err) throw err
+          void logListItemEvent(supabase, {
+            listId,
+            itemId: id,
+            eventType: 'price_calibration_cleared',
+            fingerprint: fp,
+            payload: { text: current.text },
+          })
+        },
+        revert: async () => {
+          const { error: err } = await supabase
+            .from('list_items')
+            .update({ price_calibration: prevCal })
+            .eq('id', id)
+          if (err) throw err
+        },
+      })
+    } catch (e: unknown) {
+      setItems((p) => {
+        const next = p.map((i) => (i.id === id ? { ...i, price_calibration: prevCal } : i))
+        itemsRef.current = next
+        return next
+      })
+      setError(e instanceof Error ? e.message : 'Update failed')
+    }
+  }
+
   async function changeUnit(id: string, nextUnit: string) {
     const allowed = new Set(['each', 'L', 'kg'])
     const nu = normalizeUnit(nextUnit)
@@ -543,15 +696,22 @@ export function ListPage() {
     if (current.unit === nu) return
     const fp = fingerprintFromText(current.text)
     const prevUnit = current.unit
-    const nextQty = quantityWhenChangingUnit(prevUnit, nu, current.quantity)
     const prevQty = current.quantity
-    setItems((p) => p.map((i) => (i.id === id ? { ...i, unit: nu, quantity: nextQty } : i)))
+    const prevCal = current.price_calibration ?? null
+    const nextQty = quantityWhenChangingUnit(prevUnit, nu, current.quantity)
+    setItems((p) => {
+      const next = p.map((i) =>
+        i.id === id ? { ...i, unit: nu, quantity: nextQty, price_calibration: null } : i,
+      )
+      itemsRef.current = next
+      return next
+    })
     try {
       await push({
         apply: async () => {
           const { error: err } = await supabase
             .from('list_items')
-            .update({ unit: nu, quantity: nextQty })
+            .update({ unit: nu, quantity: nextQty, price_calibration: null })
             .eq('id', id)
           if (err) throw err
           void logListItemEvent(supabase, {
@@ -565,13 +725,19 @@ export function ListPage() {
         revert: async () => {
           const { error: err } = await supabase
             .from('list_items')
-            .update({ unit: prevUnit, quantity: prevQty })
+            .update({ unit: prevUnit, quantity: prevQty, price_calibration: prevCal })
             .eq('id', id)
           if (err) throw err
         },
       })
     } catch (e: unknown) {
-      setItems((p) => p.map((i) => (i.id === id ? { ...i, unit: prevUnit, quantity: prevQty } : i)))
+      setItems((p) => {
+        const next = p.map((i) =>
+          i.id === id ? { ...i, unit: prevUnit, quantity: prevQty, price_calibration: prevCal } : i,
+        )
+        itemsRef.current = next
+        return next
+      })
       setError(e instanceof Error ? e.message : 'Update failed')
     }
   }
@@ -598,10 +764,27 @@ export function ListPage() {
           })
         },
         revert: async () => {
-          const { error: err } = await supabase.from('list_items').update({ category_key: prevKey }).eq('id', id)
+          const { error: err } = await supabase
+            .from('list_items')
+            .update({ category_key: current.category_key })
+            .eq('id', id)
           if (err) throw err
         },
       })
+      const { error: learnErr } = await supabase.from('list_category_learnings').upsert(
+        {
+          list_id: listId,
+          fingerprint: fp,
+          category_key: categoryKey,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'list_id,fingerprint' },
+      )
+      if (learnErr) {
+        setError(learnErr.message)
+        return
+      }
+      setCategoryLearnings((prev) => ({ ...prev, [fp]: categoryKey }))
     } catch (e: unknown) {
       setItems((p) => p.map((i) => (i.id === id ? { ...i, category_key: current.category_key } : i)))
       setError(e instanceof Error ? e.message : 'Update failed')
@@ -625,14 +808,43 @@ export function ListPage() {
     }
   }
 
-  async function addSuggestion(s: (typeof suggestions)[number]) {
-    const match = items.find((i) => !i.checked && fingerprintFromText(i.text) === s.fingerprint)
-    if (match) {
-      const nextQty = Math.round((match.quantity + s.suggestedQty) * 10) / 10
-      await changeQuantity(match.id, nextQty)
-      return
+  async function dismissRecommendation(fingerprint: string, displayText: string) {
+    if (!listId) return
+    setError(null)
+    try {
+      await logListItemEvent(supabase, {
+        listId,
+        itemId: null,
+        eventType: 'recommendation_dismissed',
+        fingerprint,
+        payload: { text: displayText },
+      })
+      await refreshEvents()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Could not update recommendations')
     }
-    await insertItem(s.displayText, s.suggestedQty, s.unit)
+  }
+
+  async function addRecommendationsBatch(rows: RecommendationBatchRow[]) {
+    if (!listId || rows.length === 0) return
+    setError(null)
+    try {
+      for (const r of rows) {
+        const match = itemsRef.current.find(
+          (i) => !i.checked && fingerprintFromText(i.text) === r.fingerprint,
+        )
+        if (match) {
+          const nextQty = Math.round((match.quantity + r.qty) * 10) / 10
+          await changeQuantity(match.id, nextQty)
+        } else {
+          await insertItem(r.displayText, r.qty, r.unit)
+        }
+      }
+      await refreshEvents()
+      setRecOpen(false)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Could not add items')
+    }
   }
 
   const groupedBuckets = useMemo(() => {
@@ -656,7 +868,10 @@ export function ListPage() {
   const pricingFetchKey = useMemo(
     () =>
       `${list?.store_preset_id ?? ''}:${presets.map((p) => `${p.id}:${p.slug}`).join(',')}:${items
-        .map((i) => `${i.id}:${i.quantity}:${normalizeUnit(i.unit)}:${i.text}:${i.checked ? '1' : '0'}`)
+        .map(
+          (i) =>
+            `${i.id}:${i.quantity}:${normalizeUnit(i.unit)}:${i.text}:${i.checked ? '1' : '0'}:${JSON.stringify(i.price_calibration ?? null)}`,
+        )
         .join('|')}`,
     [items, list?.store_preset_id, presets],
   )
@@ -688,6 +903,11 @@ export function ListPage() {
   const categoryPickerItem = useMemo(
     () => (categoryPickerItemId ? items.find((i) => i.id === categoryPickerItemId) ?? null : null),
     [categoryPickerItemId, items],
+  )
+
+  const priceCalItem = useMemo(
+    () => (priceCalItemId ? items.find((i) => i.id === priceCalItemId) ?? null : null),
+    [priceCalItemId, items],
   )
 
   function openCategoryPicker(itemId: string) {
@@ -764,6 +984,16 @@ export function ListPage() {
                   }}
                 >
                   Manage store aisle ordering
+                </button>
+                <button
+                  type="button"
+                  className="mb-1 block min-h-8 w-full rounded-[6px] px-2 py-1 text-left hover:bg-slate-100 active:bg-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
+                  onClick={() => {
+                    setActionsOpen(false)
+                    setStoresOpen(true)
+                  }}
+                >
+                  Manage stores
                 </button>
                 <button
                   type="button"
@@ -858,6 +1088,9 @@ export function ListPage() {
                     key={item.id}
                     item={item}
                     isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
+                    estimatedLineCost={pricing.items[item.id]?.estimatedCost ?? 0}
+                    hasYourPrice={parsePriceCalibration(item.price_calibration) !== null}
+                    onOpenYourPrice={() => setPriceCalItemId(item.id)}
                     onToggle={(id, c) => void toggleItem(id, c)}
                     onDelete={(id) => void deleteItem(id)}
                     onQuantityChange={(id, q) => void changeQuantity(id, q)}
@@ -886,6 +1119,9 @@ export function ListPage() {
                     key={item.id}
                     item={item}
                     isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
+                    estimatedLineCost={pricing.items[item.id]?.estimatedCost ?? 0}
+                    hasYourPrice={parsePriceCalibration(item.price_calibration) !== null}
+                    onOpenYourPrice={() => setPriceCalItemId(item.id)}
                     onToggle={(id, c) => void toggleItem(id, c)}
                     onDelete={(id) => void deleteItem(id)}
                     onQuantityChange={(id, q) => void changeQuantity(id, q)}
@@ -943,6 +1179,9 @@ export function ListPage() {
                         key={item.id}
                         item={item}
                         isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
+                        estimatedLineCost={pricing.items[item.id]?.estimatedCost ?? 0}
+                        hasYourPrice={parsePriceCalibration(item.price_calibration) !== null}
+                        onOpenYourPrice={() => setPriceCalItemId(item.id)}
                         disabled
                         inGroupedBlock
                         enableLongPressCategoryChange
@@ -978,6 +1217,9 @@ export function ListPage() {
                     key={item.id}
                     item={item}
                     isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
+                    estimatedLineCost={pricing.items[item.id]?.estimatedCost ?? 0}
+                    hasYourPrice={parsePriceCalibration(item.price_calibration) !== null}
+                    onOpenYourPrice={() => setPriceCalItemId(item.id)}
                     disabled
                     inGroupedBlock
                     enableLongPressCategoryChange
@@ -1080,8 +1322,20 @@ export function ListPage() {
         open={recOpen}
         onClose={() => setRecOpen(false)}
         suggestions={suggestions}
-        onAdd={(s) => void addSuggestion(s)}
+        storePresetId={list?.store_preset_id ?? null}
+        presets={presets}
+        onDismiss={(fp, text) => void dismissRecommendation(fp, text)}
+        onAddBatch={(rows) => void addRecommendationsBatch(rows)}
       />
+
+      {priceCalItem ? (
+        <PriceCalibrationModal
+          item={priceCalItem}
+          onClose={() => setPriceCalItemId(null)}
+          onSave={(cal) => void savePriceCalibration(priceCalItem.id, cal)}
+          onClear={() => void clearPriceCalibration(priceCalItem.id)}
+        />
+      ) : null}
 
       {pendingDuplicateAdd ? (
         <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
@@ -1105,7 +1359,9 @@ export function ListPage() {
                   const payload = pendingDuplicateAdd
                   setPendingDuplicateAdd(null)
                   if (!payload) return
-                  void insertItem(payload.text, payload.qty, payload.unit)
+                  void insertItem(payload.text, payload.qty, payload.unit).catch(() => {
+                    /* insertItem sets error */
+                  })
                   setNewText('')
                   setNewQty(1)
                   setNewQtyText('1')
@@ -1209,6 +1465,19 @@ export function ListPage() {
           }}
         />
       )}
+
+      {storesOpen ? (
+        <StoresManageModal
+          presets={presets}
+          onClose={() => setStoresOpen(false)}
+          onCatalogUpdated={async () => {
+            setError(null)
+            await refreshStoreCatalog()
+            await refreshAll()
+          }}
+          setError={setError}
+        />
+      ) : null}
     </div>
   )
 }

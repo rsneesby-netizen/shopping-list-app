@@ -9,6 +9,11 @@
   --color-brand-800: #115e59;
 }
 
+html {
+  /* Avoid grey flash on taps (mobile) interfering with gestures */
+  -webkit-tap-highlight-color: transparent;
+}
+
 html,
 body,
 #root {
@@ -20,6 +25,18 @@ body {
   font-family: var(--font-sans);
   background: #f8fafc;
   color: #0f172a;
+  /* Reduce accidental text selection / drag-select during long-press and drags */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Keep real form fields editable and copyable */
+input,
+textarea,
+select,
+[contenteditable='true'] {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 @media (prefers-color-scheme: dark) {

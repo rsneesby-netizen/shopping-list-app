@@ -1,4 +1,8 @@
 {
+  "catalogSlugAliases": {
+    "woolworths": "woolworths-kotara",
+    "coles": "coles-kotara"
+  },
   "stores": {
     "woolworths-kotara": [
       { "keywords": ["milk", "full cream milk"], "unit": "L", "unitPrice": 1.7, "regularUnitPrice": 1.9 },
@@ -20,15 +24,18 @@
       { "keywords": ["eggs"], "unit": "each", "unitPrice": 0.53, "regularUnitPrice": 0.58 }
     ],
     "aldi-kotara": [
-      { "keywords": ["milk"], "unit": "L", "unitPrice": 1.6, "regularUnitPrice": 1.8 },
-      { "keywords": ["bread"], "unit": "each", "unitPrice": 2.9, "regularUnitPrice": 3.2 },
-      { "keywords": ["eggs"], "unit": "each", "unitPrice": 0.48, "regularUnitPrice": 0.55 },
-      { "keywords": ["banana", "bananas"], "unit": "kg", "unitPrice": 2.9, "regularUnitPrice": 3.4 }
+      { "keywords": ["milk", "full cream milk"], "unit": "L", "unitPrice": 1.55, "regularUnitPrice": 1.75 },
+      { "keywords": ["bread", "wholemeal bread"], "unit": "each", "unitPrice": 2.85, "regularUnitPrice": 3.1 },
+      { "keywords": ["eggs"], "unit": "each", "unitPrice": 0.46, "regularUnitPrice": 0.52 },
+      { "keywords": ["banana", "bananas"], "unit": "kg", "unitPrice": 2.85, "regularUnitPrice": 3.35 },
+      { "keywords": ["chicken breast"], "unit": "kg", "unitPrice": 9.8, "regularUnitPrice": 11.2 }
     ],
     "aldi-newcastle-west": [
-      { "keywords": ["milk"], "unit": "L", "unitPrice": 1.62, "regularUnitPrice": 1.82 },
-      { "keywords": ["bread"], "unit": "each", "unitPrice": 2.95, "regularUnitPrice": 3.25 },
-      { "keywords": ["eggs"], "unit": "each", "unitPrice": 0.49, "regularUnitPrice": 0.56 }
+      { "keywords": ["milk", "full cream milk"], "unit": "L", "unitPrice": 1.58, "regularUnitPrice": 1.78 },
+      { "keywords": ["bread", "wholemeal bread"], "unit": "each", "unitPrice": 2.88, "regularUnitPrice": 3.15 },
+      { "keywords": ["eggs"], "unit": "each", "unitPrice": 0.47, "regularUnitPrice": 0.53 },
+      { "keywords": ["banana", "bananas"], "unit": "kg", "unitPrice": 2.88, "regularUnitPrice": 3.38 },
+      { "keywords": ["chicken breast"], "unit": "kg", "unitPrice": 9.9, "regularUnitPrice": 11.3 }
     ]
   }
 }

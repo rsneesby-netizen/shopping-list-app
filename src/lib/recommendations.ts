@@ -8,6 +8,8 @@ export type Suggestion = {
   unit: string
   confidence: 'high' | 'medium' | 'low'
   reason: string
+  /** User previously thumbs-downed but bought again — sort lower than never-dismissed. */
+  deprioritized?: boolean
 }
 
 function isoWeekKey(d: Date): string {
@@ -24,6 +26,26 @@ function median(nums: number[]): number {
   const s = [...nums].sort((a, b) => a - b)
   const m = Math.floor(s.length / 2)
   return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2
+}
+
+function lastDismissMs(events: ListItemEventRow[], fp: string, horizonStart: number): number | null {
+  let max: number | null = null
+  for (const e of events) {
+    if (e.event_type !== 'recommendation_dismissed' || e.fingerprint !== fp) continue
+    const t = new Date(e.created_at).getTime()
+    if (t < horizonStart) continue
+    if (max === null || t > max) max = t
+  }
+  return max
+}
+
+function countChecksSince(events: ListItemEventRow[], fp: string, sinceMs: number): number {
+  let n = 0
+  for (const e of events) {
+    if (e.event_type !== 'item_checked' || e.fingerprint !== fp) continue
+    if (new Date(e.created_at).getTime() > sinceMs) n += 1
+  }
+  return n
 }
 
 export function buildSuggestions(
@@ -45,6 +67,8 @@ export function buildSuggestions(
     fingerprint: string
     displayText: string
     weeklyTotals: Map<string, number>
+    purchaseQtys: number[]
+    firstPurchaseAt: number
     lastPurchaseAt: number
     lastQty: number
     lastUnit: string
@@ -59,12 +83,16 @@ export function buildSuggestions(
     const unit = String(p.unit ?? 'each')
     const text = String(p.text ?? fp)
     const wk = isoWeekKey(new Date(e.created_at))
+    const ts = new Date(e.created_at).getTime()
+
     let a = byFp.get(fp)
     if (!a) {
       a = {
         fingerprint: fp,
         displayText: text,
         weeklyTotals: new Map(),
+        purchaseQtys: [],
+        firstPurchaseAt: ts,
         lastPurchaseAt: 0,
         lastQty: 0,
         lastUnit: unit,
@@ -72,9 +100,10 @@ export function buildSuggestions(
       byFp.set(fp, a)
     }
     a.weeklyTotals.set(wk, (a.weeklyTotals.get(wk) ?? 0) + qty)
-    const t = new Date(e.created_at).getTime()
-    if (t >= a.lastPurchaseAt) {
-      a.lastPurchaseAt = t
+    a.purchaseQtys.push(qty)
+    a.firstPurchaseAt = Math.min(a.firstPurchaseAt, ts)
+    if (ts >= a.lastPurchaseAt) {
+      a.lastPurchaseAt = ts
       a.lastQty = qty
       a.lastUnit = unit
       a.displayText = text
@@ -88,45 +117,64 @@ export function buildSuggestions(
   const suggestions: Suggestion[] = []
 
   for (const a of byFp.values()) {
+    const fp = a.fingerprint
+    if (existing.has(fp)) continue
+
+    const lastDim = lastDismissMs(events, fp, cutoff)
+    if (lastDim !== null && countChecksSince(events, fp, lastDim) < 3) {
+      continue
+    }
+    const deprioritized = lastDim !== null
+
     const weeks = [...a.weeklyTotals.values()]
     const weeklyConsumption = median(weeks)
     if (weeklyConsumption <= 0) continue
 
-    const purchaseCount = checked.filter((c) => c.fingerprint === a.fingerprint).length
+    const purchaseCount = checked.filter((c) => c.fingerprint === fp).length
     if (purchaseCount < 2) continue
 
-    const weeksSinceLast = Math.max(
-      0.0001,
-      (now.getTime() - a.lastPurchaseAt) / (7 * 86400000),
-    )
-    let projected = a.lastQty - weeklyConsumption * weeksSinceLast
-    projected = Math.max(0, projected)
+    const purchaseMed = median(a.purchaseQtys)
+    const medianPurchase = purchaseMed > 0 ? purchaseMed : a.lastQty || 1
 
-    const targetBuffer = weeklyConsumption * 0.35
-    if (projected > targetBuffer) continue
+    const nowMs = now.getTime()
+    const weeksSinceLast = Math.max(0.0001, (nowMs - a.lastPurchaseAt) / (7 * 86400000))
+    const depletedEstimate = a.lastQty - weeklyConsumption * weeksSinceLast
+    const targetBuffer = weeklyConsumption * 0.5
+    if (depletedEstimate > targetBuffer) continue
 
-    let suggestedQty = Math.max(weeklyConsumption - projected, weeklyConsumption * 0.25)
-    suggestedQty = Math.round(suggestedQty * 10) / 10
+    const spanMs = Math.max(nowMs - a.firstPurchaseAt, 86400000)
+    const spanWeeks = spanMs / (7 * 86400000)
+    const weekCoverage = Math.min(1.2, a.weeklyTotals.size / Math.max(0.75, spanWeeks))
+
+    let suggestedQty =
+      medianPurchase * (0.5 + 0.3 * weekCoverage) + weeklyConsumption * (0.12 + 0.18 * weekCoverage)
+    suggestedQty = Math.min(suggestedQty, Math.max(weeklyConsumption * 0.9, medianPurchase * 1.05))
+    suggestedQty = Math.max(0.25, Math.round(suggestedQty * 10) / 10)
     if (suggestedQty < 0.25) continue
-
-    if (existing.has(a.fingerprint)) continue
 
     const confidence: Suggestion['confidence'] =
       purchaseCount >= 6 ? 'high' : purchaseCount >= 3 ? 'medium' : 'low'
 
+    const reasonParts: string[] = []
+    reasonParts.push(`Usual purchase ~${medianPurchase.toFixed(1)} ${a.lastUnit}`)
+    reasonParts.push(`~${weeklyConsumption.toFixed(1)} ${a.lastUnit}/wk across weeks`)
+    if (weekCoverage >= 0.55) reasonParts.push('often weekly')
+
     suggestions.push({
-      fingerprint: a.fingerprint,
+      fingerprint: fp,
       displayText: a.displayText,
       suggestedQty,
       unit: a.lastUnit,
       confidence,
-      reason: `Typical ~${weeklyConsumption.toFixed(1)} ${a.lastUnit}/wk; stock estimate low`,
+      reason: reasonParts.join(' · '),
+      deprioritized,
     })
   }
 
   suggestions.sort((x, y) => {
     const rank = { high: 0, medium: 1, low: 2 }
     if (rank[x.confidence] !== rank[y.confidence]) return rank[x.confidence] - rank[y.confidence]
+    if (Boolean(x.deprioritized) !== Boolean(y.deprioritized)) return Number(x.deprioritized) - Number(y.deprioritized)
     return y.suggestedQty - x.suggestedQty
   })
 

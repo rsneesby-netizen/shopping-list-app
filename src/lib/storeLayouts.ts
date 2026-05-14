@@ -1,24 +1,10 @@
 import type { StorePresetRow } from '../types'
 
-export const STORE_LAYOUT_SPECS = [
-  { slug: 'woolworths-kotara', name: 'Woolworths Kotara' },
-  { slug: 'coles-kotara', name: 'Coles Kotara' },
-  { slug: 'coles-waratah', name: 'Coles Waratah' },
-  { slug: 'aldi-kotara', name: 'Aldi Kotara' },
-  { slug: 'aldi-newcastle-west', name: 'Aldi Newcastle West' },
-] as const
-
-const ALLOWED = new Set<string>(STORE_LAYOUT_SPECS.map((s) => s.slug))
 const LAST_LAYOUT_KEY = 'grocery:lastStoreLayoutId'
 
+/** Sort presets for dropdowns; all presets from the database are shown. */
 export function filterStoreLayouts(rows: StorePresetRow[]): StorePresetRow[] {
-  const filtered = rows.filter((r) => ALLOWED.has(r.slug))
-  const orderedSlugs = STORE_LAYOUT_SPECS.map((s) => s.slug) as string[]
-  return filtered.sort((a, b) => {
-    const ai = orderedSlugs.indexOf(a.slug)
-    const bi = orderedSlugs.indexOf(b.slug)
-    return (ai >= 0 ? ai : 999) - (bi >= 0 ? bi : 999)
-  })
+  return [...rows].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
 }
 
 export function rememberLastStoreLayoutId(presetId: string) {

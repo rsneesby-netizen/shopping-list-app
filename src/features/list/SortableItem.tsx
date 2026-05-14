@@ -26,12 +26,17 @@ type Props = {
   showDragHandle?: boolean
   inGroupedBlock?: boolean
   isOnSpecial?: boolean
+  /** Estimated line total (AUD); when set with onOpenYourPrice, shows tappable price control */
+  estimatedLineCost?: number
+  /** True when user saved a custom price hint for this line */
+  hasYourPrice?: boolean
   enableLongPressCategoryChange?: boolean
   onToggle: (id: string, checked: boolean) => void
   onDelete: (id: string) => void
   onQuantityChange: (id: string, quantity: number) => void
   onUnitChange: (id: string, unit: string) => void
   onLongPressCategoryChange?: (id: string) => void
+  onOpenYourPrice?: () => void
 }
 
 function eachQuantityValue(q: number) {
@@ -45,12 +50,15 @@ export function SortableItem({
   showDragHandle = true,
   inGroupedBlock = false,
   isOnSpecial = false,
+  estimatedLineCost,
+  hasYourPrice = false,
   enableLongPressCategoryChange = false,
   onToggle,
   onDelete,
   onQuantityChange,
   onUnitChange,
   onLongPressCategoryChange,
+  onOpenYourPrice,
 }: Props) {
   const unit = normalizeUnit(item.unit)
   const isEach = unit === 'each'
@@ -194,6 +202,23 @@ export function SortableItem({
           ))}
         </select>
       </div>
+      {onOpenYourPrice != null && estimatedLineCost != null ? (
+        <button
+          type="button"
+          className={`min-w-[3.25rem] shrink-0 rounded-[6px] px-1 py-1 text-right text-[11px] tabular-nums outline-none ring-teal-600 hover:bg-slate-100 focus-visible:ring-2 active:bg-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800 ${
+            hasYourPrice ? 'font-semibold text-teal-800 dark:text-teal-200' : 'text-slate-500 dark:text-slate-400'
+          }`}
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            onOpenYourPrice()
+          }}
+          title={hasYourPrice ? 'Your price — tap to edit' : 'Tap to set your price for better estimates'}
+          aria-label={`Estimated cost ${estimatedLineCost.toFixed(2)} dollars, adjust your price`}
+        >
+          ${estimatedLineCost.toFixed(2)}
+        </button>
+      ) : null}
       <button
         type="button"
         className="grid min-h-8 min-w-8 place-items-center rounded-[6px] text-[#505258] hover:bg-slate-100 active:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 dark:active:bg-slate-800"
