@@ -17,6 +17,15 @@ export type ListItemRow = {
   category_key: string | null
   created_by: string | null
   updated_at: string
+  /**
+   * Per-store-chain "your price" hints. Keys match {@link ListPriceLearningRow.store_scope}
+   * (`aldi`, `coles`, `woolworths`, `iga`, `preset:<uuid>`, or `_` when the list has no store preset).
+   */
+  price_calibration_by_scope?: Record<string, unknown> | null
+  /**
+   * Legacy single-scope column (pre–per-store migration). Still read when `price_calibration_by_scope`
+   * is empty so unmigrated databases work; prefer the map when present.
+   */
   price_calibration?: PriceCalibrationV1 | null
 }
 

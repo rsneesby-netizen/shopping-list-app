@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { parsePriceCalibration } from '../../lib/priceCalibration'
+import { parsePriceCalibrationForScope } from '../../lib/priceCalibration'
 import {
   clampQuantityForUnit,
   formatQuantityForInput,
@@ -13,15 +13,17 @@ const EACH_PACK = Array.from({ length: 20 }, (_, i) => i + 1)
 
 type Props = {
   item: ListItemRow
+  /** Same scope key as list learnings (`aldi`, `woolworths`, `preset:<uuid>`, …). */
+  storeScopeKey: string
   onClose: () => void
   onSave: (cal: PriceCalibrationV1) => void | Promise<void>
   onClear: () => void | Promise<void>
 }
 
-export function PriceCalibrationModal({ item, onClose, onSave, onClear }: Props) {
+export function PriceCalibrationModal({ item, storeScopeKey, onClose, onSave, onClear }: Props) {
   const unit = normalizeUnit(item.unit)
   const isEach = unit === 'each'
-  const existing = parsePriceCalibration(item.price_calibration)
+  const existing = parsePriceCalibrationForScope(item, storeScopeKey)
 
   const [paidText, setPaidText] = useState(() => (existing ? String(existing.paidAud) : ''))
   const [packEach, setPackEach] = useState(() => (existing && isEach ? eachPackValue(existing.packQty) : 1))
@@ -37,7 +39,7 @@ export function PriceCalibrationModal({ item, onClose, onSave, onClear }: Props)
   }
 
   useEffect(() => {
-    const ex = parsePriceCalibration(item.price_calibration)
+    const ex = parsePriceCalibrationForScope(item, storeScopeKey)
     setPaidText(ex ? String(ex.paidAud) : '')
     if (isEach) {
       setPackEach(ex ? eachPackValue(ex.packQty) : 1)
@@ -45,7 +47,7 @@ export function PriceCalibrationModal({ item, onClose, onSave, onClear }: Props)
       setPackText(ex ? formatQuantityForInput(unit, ex.packQty) : formatQuantityForInput(unit, 1))
     }
     setFormError(null)
-  }, [item.id, item.price_calibration, item.unit, isEach, unit])
+  }, [item.id, item.price_calibration_by_scope, item.unit, isEach, unit, storeScopeKey])
 
   async function handleSave() {
     setFormError(null)

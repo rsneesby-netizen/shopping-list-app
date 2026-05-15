@@ -1,6 +1,6 @@
 import pricingSeed from '../data/pricingSeed.json'
 import type { ListItemRow, ListPriceLearningRow, StorePresetRow } from '../types'
-import { calibratedLineCostAud, parsePriceCalibration } from './priceCalibration'
+import { calibratedLineCostAud, parsePriceCalibrationForScope } from './priceCalibration'
 import { crossStoreLineHint, learningDealStripe, priceLearningMapKey } from './priceLearnings'
 import { fingerprintFromText } from './normalize'
 import type { PricingEstimateRequest, PricingEstimateResponse } from './pricingContract'
@@ -167,6 +167,7 @@ function mergeRemoteWithLocal(
   let remoteUsed = 0
   const items: Record<string, ItemPriceEstimate> = {}
   let total = 0
+  const calibrationScopeKey = storePresetId ? priceLearningScopeFromPresetId(presets, storePresetId) ?? '_' : '_'
 
   for (const [id, loc] of Object.entries(local.items)) {
     const r = byId.get(id)
@@ -182,7 +183,7 @@ function mergeRemoteWithLocal(
       items[id] = loc
     }
     const row = itemById.get(id)
-    const calCost = row ? calibratedLineCostAud(row, parsePriceCalibration(row.price_calibration)) : null
+    const calCost = row ? calibratedLineCostAud(row, parsePriceCalibrationForScope(row, calibrationScopeKey)) : null
     if (calCost !== null) {
       items[id] = { ...items[id], estimatedCost: calCost, confidence: 'high', onSpecial: false }
     } else if (row && storePresetId) {
@@ -242,10 +243,11 @@ export function estimateListPricing(
   let usedCrossHint = false
 
   const currentScope = storePresetId ? priceLearningScopeFromPresetId(presets, storePresetId) : null
+  const calibrationScopeKey = storePresetId ? priceLearningScopeFromPresetId(presets, storePresetId) ?? '_' : '_'
 
   for (const item of items) {
     const base = estimateItemCostFromCatalog(item, rows, slug)
-    const calCost = calibratedLineCostAud(item, parsePriceCalibration(item.price_calibration))
+    const calCost = calibratedLineCostAud(item, parsePriceCalibrationForScope(item, calibrationScopeKey))
     if (calCost !== null) {
       map[item.id] = { ...base, estimatedCost: calCost, confidence: 'high', onSpecial: false }
       total += map[item.id].estimatedCost
@@ -298,7 +300,7 @@ export function estimateListPricing(
   let baseLabel = rows?.length ? 'Seeded store pricing estimate' : 'Fallback estimate'
   if (usedOwnLearning) baseLabel = `${baseLabel} · learned typical`
   else if (usedCrossHint) baseLabel = `${baseLabel} · other-store hint`
-  const anyCal = items.some((i) => parsePriceCalibration(i.price_calibration))
+  const anyCal = items.some((i) => parsePriceCalibrationForScope(i, calibrationScopeKey))
   return {
     totalEstimatedCost: total,
     items: map,

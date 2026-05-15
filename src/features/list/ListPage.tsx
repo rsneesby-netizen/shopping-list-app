@@ -15,7 +15,12 @@ import { categoryDisplayLabel, categoryLabel, inferCategoryKey, listCategoryDefs
 import { categoryForNewItem } from '../../lib/categoryLearning'
 import { logListItemEvent } from '../../lib/events'
 import { fingerprintFromText } from '../../lib/normalize'
-import { parsePriceCalibration } from '../../lib/priceCalibration'
+import {
+  mergeCalibrationIntoMap,
+  parsePriceCalibration,
+  parsePriceCalibrationForScope,
+  removeCalibrationFromMap,
+} from '../../lib/priceCalibration'
 import { upsertPriceLearningFromCalibration } from '../../lib/priceLearningDb'
 import { estimateListPricing, fetchMergedListPricing, type ListPriceEstimate } from '../../lib/pricing'
 import { keyAfterLast, keyAfterReorder, sortByPosition } from '../../lib/positions'
@@ -25,6 +30,7 @@ import {
   pickDefaultStoreLayoutId,
   rememberLastStoreLayoutId,
 } from '../../lib/storeLayouts'
+import { priceLearningScopeFromPresetId } from '../../lib/storeChain'
 import {
   clampQuantityForUnit,
   formatQuantityForInput,
@@ -35,6 +41,7 @@ import {
   UNIT_OPTIONS,
 } from '../../lib/units'
 import { getSupabase } from '../../lib/supabase'
+import { errorMessageFromUnknown, isMissingPriceCalibrationByScopeColumn } from '../../lib/supabaseErrorMessage'
 import type {
   ListCategoryLearningRow,
   ListItemEventRow,
@@ -52,6 +59,13 @@ import { SortableItem } from './SortableItem'
 import { StoresManageModal } from './StoresManageModal'
 import { BackToListsIcon, GroupCollapseChevronIcon, GroupExpandChevronIcon } from './listIcons'
 import { ToolbarIconMore, ToolbarIconRecommended, ToolbarIconRedo, ToolbarIconUndo } from './toolbarIcons'
+
+function clonePriceCalibrationByScope(m: ListItemRow['price_calibration_by_scope']): Record<string, unknown> {
+  if (m && typeof m === 'object' && !Array.isArray(m)) {
+    return JSON.parse(JSON.stringify(m)) as Record<string, unknown>
+  }
+  return {}
+}
 
 const ADD_EACH_QTY_OPTIONS = Array.from({ length: 20 }, (_, i) => i + 1)
 type PendingAdd = { text: string; qty: number; unit: string }
@@ -277,6 +291,12 @@ export function ListPage() {
     [list?.store_preset_id, presetCats],
   )
 
+  /** Scope key for line-level "your price" calibrations (matches list_price_learnings.store_scope). */
+  const priceCalibrationScopeKey = useMemo(
+    () => priceLearningScopeFromPresetId(presets, list?.store_preset_id ?? null) ?? '_',
+    [presets, list?.store_preset_id],
+  )
+
   const suggestions = useMemo(
     () => buildSuggestions(events, items),
     [events, items],
@@ -485,7 +505,7 @@ export function ListPage() {
             position: snap.position,
             category_key: snap.category_key,
             created_by: snap.created_by,
-            price_calibration: snap.price_calibration ?? null,
+            price_calibration_by_scope: snap.price_calibration_by_scope ?? {},
           })
           if (err) throw err
         },
@@ -521,7 +541,7 @@ export function ListPage() {
               position: snap.position,
               category_key: snap.category_key,
               created_by: snap.created_by,
-              price_calibration: snap.price_calibration ?? null,
+              price_calibration_by_scope: snap.price_calibration_by_scope ?? {},
             })),
           )
           if (err) throw err
@@ -632,25 +652,56 @@ export function ListPage() {
     if (!listId) return
     const current = items.find((i) => i.id === id)
     if (!current) return
-    const prevCal = current.price_calibration ?? null
+    const prevMap = clonePriceCalibrationByScope(current.price_calibration_by_scope)
+    const prevLegacy = parsePriceCalibration(current.price_calibration)
+    const nextMap = mergeCalibrationIntoMap(current.price_calibration_by_scope, priceCalibrationScopeKey, cal)
     const fp = fingerprintFromText(current.text)
     setItems((p) => {
-      const next = p.map((i) => (i.id === id ? { ...i, price_calibration: cal } : i))
+      const next = p.map((i) => (i.id === id ? { ...i, price_calibration_by_scope: nextMap } : i))
       itemsRef.current = next
       return next
     })
+    let calibrationWriteMode: 'scoped' | 'legacy' = 'scoped'
     try {
       await push({
         apply: async () => {
-          const { error: err } = await supabase.from('list_items').update({ price_calibration: cal }).eq('id', id)
-          if (err) throw err
-          void logListItemEvent(supabase, {
-            listId,
-            itemId: id,
-            eventType: 'price_calibration_set',
-            fingerprint: fp,
-            payload: { text: current.text, cal },
-          })
+          const modern = await supabase
+            .from('list_items')
+            .update({ price_calibration_by_scope: nextMap })
+            .eq('id', id)
+          if (!modern.error) {
+            calibrationWriteMode = 'scoped'
+            void logListItemEvent(supabase, {
+              listId,
+              itemId: id,
+              eventType: 'price_calibration_set',
+              fingerprint: fp,
+              payload: { text: current.text, cal, store_scope: priceCalibrationScopeKey },
+            })
+          } else if (isMissingPriceCalibrationByScopeColumn(modern.error)) {
+            const leg = await supabase.from('list_items').update({ price_calibration: cal }).eq('id', id)
+            if (leg.error) throw modern.error
+            calibrationWriteMode = 'legacy'
+            setItems((p) => {
+              const next = p.map((i) =>
+                i.id === id ? { ...i, price_calibration_by_scope: {}, price_calibration: cal } : i,
+              )
+              itemsRef.current = next
+              return next
+            })
+            void logListItemEvent(supabase, {
+              listId,
+              itemId: id,
+              eventType: 'price_calibration_set',
+              fingerprint: fp,
+              payload: { text: current.text, cal, store_scope: priceCalibrationScopeKey, legacy_column: true },
+            })
+            console.warn(
+              '[list_items] price_calibration_by_scope missing — run Supabase migration 20260516100000_list_items_price_calibration_by_scope.sql (e.g. supabase db push) for per-store prices.',
+            )
+          } else {
+            throw modern.error
+          }
           const sid = list?.store_preset_id
           if (sid && listId) {
             try {
@@ -667,22 +718,34 @@ export function ListPage() {
           }
         },
         revert: async () => {
-          const { error: err } = await supabase
-            .from('list_items')
-            .update({ price_calibration: prevCal })
-            .eq('id', id)
-          if (err) throw err
+          if (calibrationWriteMode === 'scoped') {
+            const { error: err } = await supabase
+              .from('list_items')
+              .update({ price_calibration_by_scope: prevMap })
+              .eq('id', id)
+            if (err) throw err
+          } else {
+            const { error: err } = await supabase
+              .from('list_items')
+              .update({ price_calibration: prevLegacy })
+              .eq('id', id)
+            if (err) throw err
+          }
         },
       })
       const { data: plRows } = await supabase.from('list_price_learnings').select('*').eq('list_id', listId)
       if (plRows) setPriceLearnings(plRows as ListPriceLearningRow[])
     } catch (e: unknown) {
       setItems((p) => {
-        const next = p.map((i) => (i.id === id ? { ...i, price_calibration: prevCal } : i))
+        const next = p.map((i) =>
+          i.id === id
+            ? { ...i, price_calibration_by_scope: prevMap, price_calibration: prevLegacy }
+            : i,
+        )
         itemsRef.current = next
         return next
       })
-      setError(e instanceof Error ? e.message : 'Update failed')
+      setError(errorMessageFromUnknown(e))
     }
   }
 
@@ -690,42 +753,75 @@ export function ListPage() {
     if (!listId) return
     const current = items.find((i) => i.id === id)
     if (!current) return
-    const prevCal = current.price_calibration ?? null
-    if (prevCal == null) return
+    if (parsePriceCalibrationForScope(current, priceCalibrationScopeKey) === null) return
+    const prevMap = clonePriceCalibrationByScope(current.price_calibration_by_scope)
+    const prevLegacy = parsePriceCalibration(current.price_calibration)
+    const nextMap = removeCalibrationFromMap(current.price_calibration_by_scope, priceCalibrationScopeKey)
     const fp = fingerprintFromText(current.text)
     setItems((p) => {
-      const next = p.map((i) => (i.id === id ? { ...i, price_calibration: null } : i))
+      const next = p.map((i) => (i.id === id ? { ...i, price_calibration_by_scope: nextMap } : i))
       itemsRef.current = next
       return next
     })
+    let calibrationWriteMode: 'scoped' | 'legacy' = 'scoped'
     try {
       await push({
         apply: async () => {
-          const { error: err } = await supabase.from('list_items').update({ price_calibration: null }).eq('id', id)
-          if (err) throw err
+          const modern = await supabase
+            .from('list_items')
+            .update({ price_calibration_by_scope: nextMap })
+            .eq('id', id)
+          if (!modern.error) {
+            calibrationWriteMode = 'scoped'
+          } else if (isMissingPriceCalibrationByScopeColumn(modern.error)) {
+            const leg = await supabase.from('list_items').update({ price_calibration: null }).eq('id', id)
+            if (leg.error) throw modern.error
+            calibrationWriteMode = 'legacy'
+            setItems((p) => {
+              const next = p.map((i) =>
+                i.id === id ? { ...i, price_calibration_by_scope: nextMap, price_calibration: null } : i,
+              )
+              itemsRef.current = next
+              return next
+            })
+          } else {
+            throw modern.error
+          }
           void logListItemEvent(supabase, {
             listId,
             itemId: id,
             eventType: 'price_calibration_cleared',
             fingerprint: fp,
-            payload: { text: current.text },
+            payload: { text: current.text, store_scope: priceCalibrationScopeKey },
           })
         },
         revert: async () => {
-          const { error: err } = await supabase
-            .from('list_items')
-            .update({ price_calibration: prevCal })
-            .eq('id', id)
-          if (err) throw err
+          if (calibrationWriteMode === 'scoped') {
+            const { error: err } = await supabase
+              .from('list_items')
+              .update({ price_calibration_by_scope: prevMap })
+              .eq('id', id)
+            if (err) throw err
+          } else {
+            const { error: err } = await supabase
+              .from('list_items')
+              .update({ price_calibration: prevLegacy })
+              .eq('id', id)
+            if (err) throw err
+          }
         },
       })
     } catch (e: unknown) {
       setItems((p) => {
-        const next = p.map((i) => (i.id === id ? { ...i, price_calibration: prevCal } : i))
+        const next = p.map((i) =>
+          i.id === id
+            ? { ...i, price_calibration_by_scope: prevMap, price_calibration: prevLegacy }
+            : i,
+        )
         itemsRef.current = next
         return next
       })
-      setError(e instanceof Error ? e.message : 'Update failed')
+      setError(errorMessageFromUnknown(e))
     }
   }
 
@@ -739,23 +835,45 @@ export function ListPage() {
     const fp = fingerprintFromText(current.text)
     const prevUnit = current.unit
     const prevQty = current.quantity
-    const prevCal = current.price_calibration ?? null
+    const prevCalMap = clonePriceCalibrationByScope(current.price_calibration_by_scope)
+    const prevLegacy = parsePriceCalibration(current.price_calibration)
     const nextQty = quantityWhenChangingUnit(prevUnit, nu, current.quantity)
+    const emptyCalMap: Record<string, unknown> = {}
     setItems((p) => {
       const next = p.map((i) =>
-        i.id === id ? { ...i, unit: nu, quantity: nextQty, price_calibration: null } : i,
+        i.id === id
+          ? {
+              ...i,
+              unit: nu,
+              quantity: nextQty,
+              price_calibration_by_scope: emptyCalMap,
+              price_calibration: null,
+            }
+          : i,
       )
       itemsRef.current = next
       return next
     })
+    let unitCalWriteMode: 'scoped' | 'legacy' = 'scoped'
     try {
       await push({
         apply: async () => {
-          const { error: err } = await supabase
+          const modern = await supabase
             .from('list_items')
-            .update({ unit: nu, quantity: nextQty, price_calibration: null })
+            .update({ unit: nu, quantity: nextQty, price_calibration_by_scope: emptyCalMap })
             .eq('id', id)
-          if (err) throw err
+          if (!modern.error) {
+            unitCalWriteMode = 'scoped'
+          } else if (isMissingPriceCalibrationByScopeColumn(modern.error)) {
+            const leg = await supabase
+              .from('list_items')
+              .update({ unit: nu, quantity: nextQty, price_calibration: null })
+              .eq('id', id)
+            if (leg.error) throw modern.error
+            unitCalWriteMode = 'legacy'
+          } else {
+            throw modern.error
+          }
           void logListItemEvent(supabase, {
             listId,
             itemId: id,
@@ -765,22 +883,38 @@ export function ListPage() {
           })
         },
         revert: async () => {
-          const { error: err } = await supabase
-            .from('list_items')
-            .update({ unit: prevUnit, quantity: prevQty, price_calibration: prevCal })
-            .eq('id', id)
-          if (err) throw err
+          if (unitCalWriteMode === 'scoped') {
+            const { error: err } = await supabase
+              .from('list_items')
+              .update({ unit: prevUnit, quantity: prevQty, price_calibration_by_scope: prevCalMap })
+              .eq('id', id)
+            if (err) throw err
+          } else {
+            const { error: err } = await supabase
+              .from('list_items')
+              .update({ unit: prevUnit, quantity: prevQty, price_calibration: prevLegacy })
+              .eq('id', id)
+            if (err) throw err
+          }
         },
       })
     } catch (e: unknown) {
       setItems((p) => {
         const next = p.map((i) =>
-          i.id === id ? { ...i, unit: prevUnit, quantity: prevQty, price_calibration: prevCal } : i,
+          i.id === id
+            ? {
+                ...i,
+                unit: prevUnit,
+                quantity: prevQty,
+                price_calibration_by_scope: prevCalMap,
+                price_calibration: prevLegacy,
+              }
+            : i,
         )
         itemsRef.current = next
         return next
       })
-      setError(e instanceof Error ? e.message : 'Update failed')
+      setError(errorMessageFromUnknown(e))
     }
   }
 
@@ -922,7 +1056,7 @@ export function ListPage() {
       `${list?.store_preset_id ?? ''}:${presets.map((p) => `${p.id}:${p.slug}`).join(',')}:${items
         .map(
           (i) =>
-            `${i.id}:${i.quantity}:${normalizeUnit(i.unit)}:${i.text}:${i.checked ? '1' : '0'}:${JSON.stringify(i.price_calibration ?? null)}`,
+            `${i.id}:${i.quantity}:${normalizeUnit(i.unit)}:${i.text}:${i.checked ? '1' : '0'}:${JSON.stringify(i.price_calibration_by_scope ?? {})}`,
         )
         .join('|')}|PL:${priceLearnings
         .map(
@@ -1147,7 +1281,7 @@ export function ListPage() {
                     item={item}
                     isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
                     estimatedLineCost={pricing.items[item.id]?.estimatedCost ?? 0}
-                    hasYourPrice={parsePriceCalibration(item.price_calibration) !== null}
+                    hasYourPrice={parsePriceCalibrationForScope(item, priceCalibrationScopeKey) !== null}
                     onOpenYourPrice={() => setPriceCalItemId(item.id)}
                     onToggle={(id, c) => void toggleItem(id, c)}
                     onDelete={(id) => void deleteItem(id)}
@@ -1178,7 +1312,7 @@ export function ListPage() {
                     item={item}
                     isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
                     estimatedLineCost={pricing.items[item.id]?.estimatedCost ?? 0}
-                    hasYourPrice={parsePriceCalibration(item.price_calibration) !== null}
+                    hasYourPrice={parsePriceCalibrationForScope(item, priceCalibrationScopeKey) !== null}
                     onOpenYourPrice={() => setPriceCalItemId(item.id)}
                     onToggle={(id, c) => void toggleItem(id, c)}
                     onDelete={(id) => void deleteItem(id)}
@@ -1238,7 +1372,7 @@ export function ListPage() {
                         item={item}
                         isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
                         estimatedLineCost={pricing.items[item.id]?.estimatedCost ?? 0}
-                        hasYourPrice={parsePriceCalibration(item.price_calibration) !== null}
+                        hasYourPrice={parsePriceCalibrationForScope(item, priceCalibrationScopeKey) !== null}
                         onOpenYourPrice={() => setPriceCalItemId(item.id)}
                         disabled
                         inGroupedBlock
@@ -1276,7 +1410,7 @@ export function ListPage() {
                     item={item}
                     isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
                     estimatedLineCost={pricing.items[item.id]?.estimatedCost ?? 0}
-                    hasYourPrice={parsePriceCalibration(item.price_calibration) !== null}
+                    hasYourPrice={parsePriceCalibrationForScope(item, priceCalibrationScopeKey) !== null}
                     onOpenYourPrice={() => setPriceCalItemId(item.id)}
                     disabled
                     inGroupedBlock
@@ -1389,6 +1523,7 @@ export function ListPage() {
       {priceCalItem ? (
         <PriceCalibrationModal
           item={priceCalItem}
+          storeScopeKey={priceCalibrationScopeKey}
           onClose={() => setPriceCalItemId(null)}
           onSave={(cal) => void savePriceCalibration(priceCalItem.id, cal)}
           onClear={() => void clearPriceCalibration(priceCalItem.id)}
