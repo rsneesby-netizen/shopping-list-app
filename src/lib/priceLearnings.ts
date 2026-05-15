@@ -1,9 +1,13 @@
 import type { ListPriceLearningRow, PriceCalibrationV1, StorePresetRow } from '../types'
-import { chainIndexColesBaseline } from './storeChain'
+import {
+  chainIndexColesBaseline,
+  exampleSlugForPriceLearningScope,
+  priceLearningScopeFromPresetId,
+} from './storeChain'
 import { normalizeUnit } from './units'
 
-export function priceLearningMapKey(fingerprint: string, storePresetId: string, unit: string) {
-  return `${fingerprint}\0${storePresetId}\0${normalizeUnit(unit)}`
+export function priceLearningMapKey(fingerprint: string, storeScope: string, unit: string) {
+  return `${fingerprint}\0${storeScope}\0${normalizeUnit(unit)}`
 }
 
 export function observedUnitPriceFromCalibration(cal: PriceCalibrationV1): number {
@@ -21,8 +25,8 @@ export function nextEmaUnitPrice(prevEma: number, obs: number, sampleCountBefore
 export type CrossStoreHint = { lineCost: number; confidence: 'medium' | 'low'; onSpecial: boolean }
 
 /**
- * When this store has no learning yet, optionally blend in a translation from another store's EMA
- * if the seed/catalog line total is very far off (guards bad defaults without overwriting store-specific rows).
+ * When this store has no learning yet, optionally blend in a translation from another chain's EMA
+ * if the seed/catalog line total is very far off.
  */
 export function crossStoreLineHint(
   fingerprint: string,
@@ -34,19 +38,21 @@ export function crossStoreLineHint(
   presets: StorePresetRow[],
 ): CrossStoreHint | null {
   if (lineQty <= 0 || !Number.isFinite(catalogLineCost) || catalogLineCost <= 0) return null
+  const currentScope = priceLearningScopeFromPresetId(presets, currentStorePresetId)
+  if (!currentScope) return null
   const u = normalizeUnit(unit)
   const candidates = learnings.filter(
     (r) =>
       r.fingerprint === fingerprint &&
       normalizeUnit(r.unit) === u &&
-      r.store_preset_id !== currentStorePresetId &&
+      r.store_scope !== currentScope &&
       r.sample_count >= 2,
   )
   if (!candidates.length) return null
   candidates.sort((a, b) => b.sample_count - a.sample_count)
   const best = candidates[0]!
-  const curSlug = presets.find((p) => p.id === currentStorePresetId)?.slug ?? null
-  const othSlug = presets.find((p) => p.id === best.store_preset_id)?.slug ?? null
+  const curSlug = exampleSlugForPriceLearningScope(presets, currentScope)
+  const othSlug = exampleSlugForPriceLearningScope(presets, best.store_scope)
   const idxCur = chainIndexColesBaseline(curSlug)
   const idxOth = chainIndexColesBaseline(othSlug)
   if (idxOth <= 0) return null

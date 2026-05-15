@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { ListPriceLearningRow, PriceCalibrationV1 } from '../types'
+import type { ListPriceLearningRow, PriceCalibrationV1, StorePresetRow } from '../types'
+import { priceLearningScopeFromPresetId } from './storeChain'
 import { normalizeUnit } from './units'
 import { nextEmaUnitPrice, observedUnitPriceFromCalibration } from './priceLearnings'
 
@@ -8,10 +9,14 @@ export async function upsertPriceLearningFromCalibration(
   params: {
     listId: string
     storePresetId: string
+    presets: StorePresetRow[]
     fingerprint: string
     cal: PriceCalibrationV1
   },
 ): Promise<void> {
+  const scope = priceLearningScopeFromPresetId(params.presets, params.storePresetId)
+  if (!scope) return
+
   const obs = observedUnitPriceFromCalibration(params.cal)
   if (!Number.isFinite(obs) || obs <= 0) return
   const unit = normalizeUnit(params.cal.unit)
@@ -21,7 +26,7 @@ export async function upsertPriceLearningFromCalibration(
     .select('*')
     .eq('list_id', params.listId)
     .eq('fingerprint', params.fingerprint)
-    .eq('store_preset_id', params.storePresetId)
+    .eq('store_scope', scope)
     .eq('unit', unit)
     .maybeSingle()
 
@@ -34,7 +39,7 @@ export async function upsertPriceLearningFromCalibration(
     row = {
       list_id: params.listId,
       fingerprint: params.fingerprint,
-      store_preset_id: params.storePresetId,
+      store_scope: scope,
       unit,
       ema_unit_price_aud: obs,
       sample_count: 1,
@@ -58,7 +63,7 @@ export async function upsertPriceLearningFromCalibration(
   }
 
   const { error: eUpsert } = await supabase.from('list_price_learnings').upsert(row, {
-    onConflict: 'list_id,fingerprint,store_preset_id,unit',
+    onConflict: 'list_id,fingerprint,store_scope,unit',
   })
   if (eUpsert) throw eUpsert
 }

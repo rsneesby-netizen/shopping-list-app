@@ -7,7 +7,9 @@ import {
   formatQuantityForInput,
   normalizeUnit,
   parseQuantityInput,
+  quantityWhenChangingUnit,
   unitOptionLabel,
+  UNIT_OPTIONS,
 } from '../../lib/units'
 import { RecommendationThumbDownIcon } from './listIcons'
 
@@ -19,6 +21,9 @@ const qtyBoxClass =
 const noChevron =
   'appearance-none bg-[length:0] [background-image:none] [&::-webkit-appearance]:none'
 
+const unitSelectClass =
+  `${noChevron} shrink-0 cursor-pointer border-0 bg-transparent p-0 text-[10px] leading-tight text-slate-500 outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 dark:text-slate-400`
+
 export type RecommendationBatchRow = {
   fingerprint: string
   displayText: string
@@ -26,7 +31,7 @@ export type RecommendationBatchRow = {
   unit: string
 }
 
-type LineState = { selected: boolean; qty: number; qtyText: string }
+type LineState = { selected: boolean; qty: number; qtyText: string; unit: string }
 
 type Props = {
   open: boolean
@@ -69,6 +74,7 @@ export function RecommendationsDrawer({
         selected: false,
         qty: s.suggestedQty,
         qtyText: formatQuantityForInput(u, s.suggestedQty),
+        unit: u,
       }
     }
     setLineState(next)
@@ -86,7 +92,7 @@ export function RecommendationsDrawer({
 
   function lineCost(s: Suggestion): number {
     const st = lineState[s.fingerprint]
-    const u = normalizeUnit(s.unit)
+    const u = normalizeUnit(st?.unit ?? s.unit)
     let q = st?.qty ?? s.suggestedQty
     if (u !== 'each' && st) {
       const p = parseQuantityInput(u, st.qtyText)
@@ -102,7 +108,7 @@ export function RecommendationsDrawer({
       if (seen.has(s.fingerprint)) continue
       const st = lineState[s.fingerprint]
       if (!st?.selected) continue
-      const u = normalizeUnit(s.unit)
+      const u = normalizeUnit(st.unit ?? s.unit)
       let qty: number | null = null
       if (u === 'each') {
         qty = clampQuantityForUnit('each', st.qty)
@@ -146,7 +152,7 @@ export function RecommendationsDrawer({
             <ul className="flex flex-col gap-1.5 sm:gap-2">
               {suggestions.map((s) => {
                 const st = lineState[s.fingerprint]
-                const u = normalizeUnit(s.unit)
+                const u = normalizeUnit(st?.unit ?? s.unit)
                 const isEach = u === 'each'
                 return (
                   <li
@@ -205,9 +211,33 @@ export function RecommendationsDrawer({
                           aria-label={`Quantity for ${s.displayText}`}
                         />
                       )}
-                      <span className="w-7 shrink-0 text-[10px] text-slate-500 dark:text-slate-400">
-                        {unitOptionLabel(u)}
-                      </span>
+                      <select
+                        value={u}
+                        onChange={(e) => {
+                          const prevU = normalizeUnit(st?.unit ?? s.unit)
+                          const nu = normalizeUnit(e.target.value)
+                          if (prevU === nu) return
+                          let pq = st?.qty ?? s.suggestedQty
+                          if (prevU !== 'each') {
+                            const parsed = parseQuantityInput(prevU, st?.qtyText ?? '')
+                            if (parsed !== null) pq = parsed
+                          }
+                          const nextQty = quantityWhenChangingUnit(prevU, nu, pq)
+                          setLine(s.fingerprint, {
+                            unit: nu,
+                            qty: nextQty,
+                            qtyText: formatQuantityForInput(nu, nextQty),
+                          })
+                        }}
+                        className={unitSelectClass}
+                        aria-label={`Unit for ${s.displayText}`}
+                      >
+                        {UNIT_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {unitOptionLabel(opt)}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div className="min-w-[4.5rem] shrink-0 text-right text-xs tabular-nums text-slate-600 dark:text-slate-300">
                       ${lineCost(s).toFixed(2)}

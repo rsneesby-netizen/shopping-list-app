@@ -657,6 +657,7 @@ export function ListPage() {
               await upsertPriceLearningFromCalibration(supabase, {
                 listId,
                 storePresetId: sid,
+                presets,
                 fingerprint: fp,
                 cal,
               })
@@ -926,7 +927,7 @@ export function ListPage() {
         .join('|')}|PL:${priceLearnings
         .map(
           (r) =>
-            `${r.fingerprint}:${r.store_preset_id}:${normalizeUnit(r.unit)}:${r.ema_unit_price_aud}:${r.sample_count}:${r.last_obs_unit_price_aud}`,
+            `${r.fingerprint}:${r.store_scope}:${normalizeUnit(r.unit)}:${r.ema_unit_price_aud}:${r.sample_count}:${r.last_obs_unit_price_aud}`,
         )
         .sort()
         .join(';')}`,

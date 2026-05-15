@@ -55,11 +55,12 @@ export type ListItemEventRow = {
   created_at: string
 }
 
-/** Learned typical unit price per list + item fingerprint + store layout + unit (from calibrations over time). */
+/** Learned typical unit price per list + item fingerprint + chain scope + unit (from calibrations over time). */
 export type ListPriceLearningRow = {
   list_id: string
   fingerprint: string
-  store_preset_id: string
+  /** `aldi` | `coles` | `woolworths` | `iga` | `preset:<uuid>` — all locations of the same chain share one row. */
+  store_scope: string
   unit: string
   ema_unit_price_aud: number
   sample_count: number

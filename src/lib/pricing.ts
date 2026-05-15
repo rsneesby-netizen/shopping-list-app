@@ -5,7 +5,7 @@ import { crossStoreLineHint, learningDealStripe, priceLearningMapKey } from './p
 import { fingerprintFromText } from './normalize'
 import type { PricingEstimateRequest, PricingEstimateResponse } from './pricingContract'
 import { fetchRemotePricingEstimate } from './pricingRemote'
-import { chainFallbackMultiplier, storeChainFromSlug } from './storeChain'
+import { chainFallbackMultiplier, priceLearningScopeFromPresetId, storeChainFromSlug } from './storeChain'
 import { normalizeUnit } from './units'
 
 type CatalogRow = {
@@ -152,6 +152,7 @@ function mergeRemoteWithLocal(
   local: ListPriceEstimate,
   listItems: ListItemRow[],
   storePresetId: string | null,
+  presets: StorePresetRow[],
   priceLearnings: ListPriceLearningRow[],
 ): ListPriceEstimate {
   if (!remote?.items?.length) return local
@@ -160,7 +161,7 @@ function mergeRemoteWithLocal(
   const itemById = new Map(listItems.map((i) => [i.id, i]))
   const learningByKey = new Map<string, ListPriceLearningRow>()
   for (const row of priceLearnings) {
-    learningByKey.set(priceLearningMapKey(row.fingerprint, row.store_preset_id, row.unit), row)
+    learningByKey.set(priceLearningMapKey(row.fingerprint, row.store_scope, row.unit), row)
   }
 
   let remoteUsed = 0
@@ -185,17 +186,20 @@ function mergeRemoteWithLocal(
     if (calCost !== null) {
       items[id] = { ...items[id], estimatedCost: calCost, confidence: 'high', onSpecial: false }
     } else if (row && storePresetId) {
-      const fp = fingerprintFromText(row.text)
-      const unit = normalizeUnit(row.unit)
-      const qty = Math.max(0, Number(row.quantity) || 0)
-      const own = learningByKey.get(priceLearningMapKey(fp, storePresetId, unit))
-      if (own && own.sample_count >= 1 && qty > 0) {
-        const lineCost = Math.round(own.ema_unit_price_aud * qty * 100) / 100
-        items[id] = {
-          itemId: id,
-          estimatedCost: lineCost,
-          onSpecial: learningDealStripe(own),
-          confidence: 'high',
+      const scope = priceLearningScopeFromPresetId(presets, storePresetId)
+      if (scope) {
+        const fp = fingerprintFromText(row.text)
+        const unit = normalizeUnit(row.unit)
+        const qty = Math.max(0, Number(row.quantity) || 0)
+        const own = learningByKey.get(priceLearningMapKey(fp, scope, unit))
+        if (own && own.sample_count >= 1 && qty > 0) {
+          const lineCost = Math.round(own.ema_unit_price_aud * qty * 100) / 100
+          items[id] = {
+            itemId: id,
+            estimatedCost: lineCost,
+            onSpecial: learningDealStripe(own),
+            confidence: 'high',
+          }
         }
       }
     }
@@ -229,13 +233,15 @@ export function estimateListPricing(
   const rows = resolveCatalogRows(seed, slug)
   const learningByKey = new Map<string, ListPriceLearningRow>()
   for (const row of priceLearnings) {
-    learningByKey.set(priceLearningMapKey(row.fingerprint, row.store_preset_id, row.unit), row)
+    learningByKey.set(priceLearningMapKey(row.fingerprint, row.store_scope, row.unit), row)
   }
 
   const map: Record<string, ItemPriceEstimate> = {}
   let total = 0
   let usedOwnLearning = false
   let usedCrossHint = false
+
+  const currentScope = storePresetId ? priceLearningScopeFromPresetId(presets, storePresetId) : null
 
   for (const item of items) {
     const base = estimateItemCostFromCatalog(item, rows, slug)
@@ -251,8 +257,8 @@ export function estimateListPricing(
     const qty = Math.max(0, Number(item.quantity) || 0)
     let est: ItemPriceEstimate = { ...base }
 
-    if (storePresetId && qty > 0) {
-      const key = priceLearningMapKey(fp, storePresetId, unit)
+    if (storePresetId && qty > 0 && currentScope) {
+      const key = priceLearningMapKey(fp, currentScope, unit)
       const own = learningByKey.get(key)
       if (own && own.sample_count >= 1) {
         const lineCost = Math.round(own.ema_unit_price_aud * qty * 100) / 100
@@ -312,5 +318,5 @@ export async function fetchMergedListPricing(
   const local = estimateListPricing(items, storePresetId, presets, priceLearnings)
   const req = buildPricingRequest(items, storePresetId, presets)
   const remote = await fetchRemotePricingEstimate(req)
-  return mergeRemoteWithLocal(remote, local, items, storePresetId, priceLearnings)
+  return mergeRemoteWithLocal(remote, local, items, storePresetId, presets, priceLearnings)
 }
