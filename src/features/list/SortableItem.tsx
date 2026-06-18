@@ -259,7 +259,7 @@ export function SortableItem({
           checked={item.checked}
           onPointerDown={blockDragFromControl}
           onChange={(e) => onToggle(item.id, e.target.checked)}
-          className="h-4 w-4 shrink-0 rounded border-slate-300 text-teal-700 sm:h-5 sm:w-5"
+          className="grocery-checkbox shrink-0"
         />
         <input
           ref={nameInputRef}
@@ -382,12 +382,12 @@ export function SortableItem({
                     right: rowMenuPlacement.right,
                     zIndex: 9999,
                   }}
-                  className="w-48 rounded-[6px] border border-slate-200 bg-white py-1 text-xs shadow-lg ring-1 ring-black/5 dark:border-slate-700 dark:bg-slate-900 dark:ring-white/10"
+                  className="w-52 rounded-[6px] border border-slate-200 bg-white py-0.5 text-[14px] shadow-lg ring-1 ring-black/5 dark:border-slate-700 dark:bg-slate-900 dark:ring-white/10"
                 >
                   <button
                     type="button"
                     role="menuitem"
-                    className="block min-h-8 w-full px-3 py-1.5 text-left text-slate-800 hover:bg-slate-100 active:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
+                    className="flex min-h-10 w-full items-center px-3 text-left text-[14px] text-slate-800 hover:bg-slate-100 active:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
                     onClick={() => {
                       setRowMenuOpen(false)
                       onDelete(item.id)
@@ -399,7 +399,7 @@ export function SortableItem({
                     <button
                       type="button"
                       role="menuitem"
-                      className="block min-h-8 w-full px-3 py-1.5 text-left text-slate-800 hover:bg-slate-100 active:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
+                      className="flex min-h-10 w-full items-center px-3 text-left text-[14px] text-slate-800 hover:bg-slate-100 active:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
                       onClick={() => {
                         setRowMenuOpen(false)
                         onChangeCategory(item.id)
@@ -412,7 +412,7 @@ export function SortableItem({
                     <button
                       type="button"
                       role="menuitem"
-                      className="block min-h-8 w-full px-3 py-1.5 text-left text-slate-800 hover:bg-slate-100 active:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
+                      className="flex min-h-10 w-full items-center px-3 text-left text-[14px] text-slate-800 hover:bg-slate-100 active:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
                       onClick={() => beginEditNameFromMenu()}
                     >
                       Edit name

@@ -12,7 +12,7 @@
 html {
   /* Avoid grey flash on taps (mobile) interfering with gestures */
   -webkit-tap-highlight-color: transparent;
-  /* Avoid automatic font inflation on orientation / layout changes (iOS) */
+  /* Reduce iOS font inflation on orientation changes */
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
@@ -50,14 +50,59 @@ select,
 }
 
 /*
- * iOS Safari (and some Android browsers) zoom the viewport when a focused form
- * control’s computed font-size is under ~16px. Use a real 16px minimum on
- * narrow viewports instead of locking maximum-scale (keeps pinch-zoom accessible).
+ * iOS Safari zooms focused fields when computed font-size is under ~16px.
+ * Exclude checkboxes — they use .grocery-checkbox (fixed 20px, custom paint).
  */
 @media (pointer: coarse), (max-width: 639px) {
   input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='hidden']):not([type='button']):not([type='submit']):not([type='reset']),
   textarea,
   select {
     font-size: 16px !important;
+  }
+}
+
+/* 20px custom checkbox: gray box, blue fill + white check when checked (all viewports) */
+.grocery-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  flex-shrink: 0;
+  margin: 0;
+  border-radius: 4px;
+  border: 1px solid #cbd5e1;
+  background-color: #f1f5f9;
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.grocery-checkbox:checked {
+  border-color: #2563eb;
+  background-color: #2563eb;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
+  background-size: 12px 12px;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.grocery-checkbox:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.grocery-checkbox:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .grocery-checkbox:not(:checked) {
+    border-color: #475569;
+    background-color: #1e293b;
   }
 }

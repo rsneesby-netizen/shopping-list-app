@@ -310,7 +310,7 @@ export function RecommendationsDrawer({
                           type="checkbox"
                           checked={st.selected}
                           onChange={(e) => setLine(s.fingerprint, { selected: e.target.checked })}
-                          className="h-4 w-4 shrink-0 rounded border-slate-300 text-teal-700 sm:h-5 sm:w-5"
+                          className="grocery-checkbox shrink-0"
                           aria-label={`Include ${st.displayText}`}
                         />
                         <input

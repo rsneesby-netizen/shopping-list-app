@@ -422,7 +422,7 @@ export function RecipeUrlImportDrawer({
                             type="checkbox"
                             checked={r.selected}
                             onChange={(e) => setLine(r.id, { selected: e.target.checked })}
-                            className="h-4 w-4 shrink-0 rounded border-slate-300 text-teal-700 sm:h-5 sm:w-5"
+                            className="grocery-checkbox shrink-0"
                             aria-label={`Include ${r.displayText}`}
                           />
                           <input
@@ -536,7 +536,7 @@ export function RecipeUrlImportDrawer({
                               type="checkbox"
                               checked={r.selected}
                               onChange={(e) => setLine(r.id, { selected: e.target.checked })}
-                              className="h-4 w-4 shrink-0 rounded border-slate-300 text-teal-700 sm:h-5 sm:w-5"
+                              className="grocery-checkbox shrink-0"
                               aria-label={`Also add ${r.displayText} from recipe`}
                             />
                             <input
