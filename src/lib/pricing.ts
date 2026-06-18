@@ -47,7 +47,11 @@ function fallbackUnitPrice(unit: string, slug: string | null) {
   let base: number
   if (u === 'each') base = 1.8
   else if (u === 'L') base = 2.2
+  else if (u === 'ml') base = 2.2 / 1000
   else if (u === 'kg') base = 6.5
+  else if (u === 'g') base = 6.5 / 1000
+  else if (u === 'tsp') base = 0.08
+  else if (u === 'tbs') base = 0.2
   else base = 2
   return base * chainFallbackMultiplier(slug)
 }

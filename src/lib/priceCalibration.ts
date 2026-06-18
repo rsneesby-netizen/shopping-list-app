@@ -12,7 +12,8 @@ export function parsePriceCalibration(raw: unknown): PriceCalibrationV1 | null {
   const packQty = Number(o.packQty)
   const unit = typeof o.unit === 'string' ? normalizeUnit(o.unit) : ''
   if (!Number.isFinite(paidAud) || paidAud <= 0) return null
-  if (unit !== 'each' && unit !== 'L' && unit !== 'kg') return null
+  if (unit !== 'each' && unit !== 'L' && unit !== 'kg' && unit !== 'g' && unit !== 'ml' && unit !== 'tsp' && unit !== 'tbs')
+    return null
   const q = clampQuantityForUnit(unit, packQty)
   if (q === null || q <= 0) return null
   return { v: 1, paidAud, packQty: q, unit }

@@ -1,5 +1,19 @@
 # React + TypeScript + Vite
 
+## Recipe import (“Add URL”)
+
+In **development**, `npm run dev` uses a built-in Vite middleware at `/api/recipe-proxy` so the app can load external recipe pages and parse ingredients (JSON-LD `Recipe`, WP Recipe Maker, or `itemprop="recipeIngredient"`).
+
+For **production** builds (and hosted PWA), browsers cannot fetch arbitrary recipe URLs (CORS). Deploy the Supabase Edge Function in `supabase/functions/recipe-proxy`, then set in `.env`:
+
+```bash
+VITE_RECIPE_FETCH_URL=https://<project-ref>.supabase.co/functions/v1/recipe-proxy
+```
+
+The app will send `?url=` and, for `supabase.co` hosts, attach `apikey` / `Authorization` using `VITE_SUPABASE_ANON_KEY`.
+
+---
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

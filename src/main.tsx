@@ -4,7 +4,10 @@ import { registerSW } from 'virtual:pwa-register'
 import './index.css'
 import App from './App.tsx'
 
-registerSW({ immediate: true })
+/** Avoid SW caching stale bundles during `npm run dev` (same origin as preview builds). */
+if (import.meta.env.PROD) {
+  registerSW({ immediate: true })
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

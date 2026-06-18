@@ -41,6 +41,7 @@ import {
   UNIT_OPTIONS,
 } from '../../lib/units'
 import { getSupabase } from '../../lib/supabase'
+import { readShowPricesPreference, writeShowPricesPreference } from '../../lib/showPricesPreference'
 import { errorMessageFromUnknown, isMissingPriceCalibrationByScopeColumn } from '../../lib/supabaseErrorMessage'
 import type {
   ListCategoryLearningRow,
@@ -54,6 +55,7 @@ import type {
 } from '../../types'
 import { CategoryOrderModal } from './CategoryOrderModal'
 import { PriceCalibrationModal } from './PriceCalibrationModal'
+import { RecipeUrlImportDrawer, type RecipeUrlImportBatchRow } from './RecipeUrlImportDrawer'
 import { RecommendationsDrawer, type RecommendationBatchRow } from './RecommendationsDrawer'
 import { SortableItem } from './SortableItem'
 import { StoresManageModal } from './StoresManageModal'
@@ -92,6 +94,9 @@ export function ListPage() {
   const [newUnit, setNewUnit] = useState('each')
   const [view, setView] = useState<'flat' | 'grouped'>('flat')
   const [recOpen, setRecOpen] = useState(false)
+  const [recipeUrlOpen, setRecipeUrlOpen] = useState(false)
+  /** Remount recipe URL drawer so internal state resets each time it opens */
+  const [recipeUrlImportKey, setRecipeUrlImportKey] = useState(0)
   const [catOpen, setCatOpen] = useState(false)
   const [storesOpen, setStoresOpen] = useState(false)
   const [actionsOpen, setActionsOpen] = useState(false)
@@ -104,6 +109,8 @@ export function ListPage() {
   const [collapsedCategoryKeys, setCollapsedCategoryKeys] = useState<Record<string, boolean>>({})
   /** Item id when "your price" sheet is open */
   const [priceCalItemId, setPriceCalItemId] = useState<string | null>(null)
+  /** Off by default; remembered in localStorage */
+  const [showPrices, setShowPrices] = useState(() => readShowPricesPreference())
   const actionsMenuRef = useRef<HTMLDivElement | null>(null)
 
   const sensors = useSensors(
@@ -168,6 +175,10 @@ export function ListPage() {
   useEffect(() => {
     itemsRef.current = items
   }, [items])
+
+  useEffect(() => {
+    writeShowPricesPreference(showPrices)
+  }, [showPrices])
 
   const refreshStoreCatalog = useCallback(async () => {
     const [{ data: presetRows, error: e1 }, { data: pcRows, error: e2 }] = await Promise.all([
@@ -648,6 +659,56 @@ export function ListPage() {
     }
   }
 
+  async function changeItemText(id: string, newText: string) {
+    if (!listId) return
+    const trimmed = newText.trim()
+    if (!trimmed) return
+    const current = items.find((i) => i.id === id)
+    if (!current) return
+    if (trimmed === current.text) return
+    const prevText = current.text
+    const prevCat = current.category_key
+    const fp = fingerprintFromText(trimmed)
+    const cat = categoryForNewItem(trimmed, fp, categoryLearnings, presetKeysOrdered)
+    setItems((p) => {
+      const next = p.map((i) => (i.id === id ? { ...i, text: trimmed, category_key: cat } : i))
+      itemsRef.current = next
+      return next
+    })
+    try {
+      await push({
+        apply: async () => {
+          const { error: err } = await supabase
+            .from('list_items')
+            .update({ text: trimmed, category_key: cat })
+            .eq('id', id)
+          if (err) throw err
+          void logListItemEvent(supabase, {
+            listId,
+            itemId: id,
+            eventType: 'text_changed',
+            fingerprint: fp,
+            payload: { from: prevText, to: trimmed },
+          })
+        },
+        revert: async () => {
+          const { error: err } = await supabase
+            .from('list_items')
+            .update({ text: prevText, category_key: prevCat })
+            .eq('id', id)
+          if (err) throw err
+        },
+      })
+    } catch (e: unknown) {
+      setItems((p) => {
+        const next = p.map((i) => (i.id === id ? { ...i, text: prevText, category_key: prevCat } : i))
+        itemsRef.current = next
+        return next
+      })
+      setError(e instanceof Error ? e.message : 'Update failed')
+    }
+  }
+
   async function savePriceCalibration(id: string, cal: PriceCalibrationV1) {
     if (!listId) return
     const current = items.find((i) => i.id === id)
@@ -826,7 +887,7 @@ export function ListPage() {
   }
 
   async function changeUnit(id: string, nextUnit: string) {
-    const allowed = new Set(['each', 'L', 'kg'])
+    const allowed = new Set(['each', 'tsp', 'tbs', 'g', 'kg', 'ml', 'L'])
     const nu = normalizeUnit(nextUnit)
     if (!listId || !allowed.has(nu)) return
     const current = items.find((i) => i.id === id)
@@ -1023,6 +1084,29 @@ export function ListPage() {
     }
   }
 
+  async function addRecipeUrlImportBatch(rows: RecipeUrlImportBatchRow[]) {
+    if (!listId || rows.length === 0) return
+    setError(null)
+    try {
+      for (const r of rows) {
+        const match = itemsRef.current.find(
+          (i) => !i.checked && fingerprintFromText(i.text) === r.fingerprint,
+        )
+        if (match) {
+          const nextQty = Math.round((match.quantity + r.qty) * 10) / 10
+          await changeQuantity(match.id, nextQty)
+        } else {
+          await insertItem(r.displayText, r.qty, r.unit)
+        }
+      }
+      await refreshEvents()
+      setRecipeUrlImportKey((k) => k + 1)
+      setRecipeUrlOpen(false)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Could not add items')
+    }
+  }
+
   const groupedBuckets = useMemo(() => {
     const buckets: Record<string, ListItemRow[]> = {}
     for (const k of categoryWalkOrder) buckets[k] = []
@@ -1116,26 +1200,25 @@ export function ListPage() {
   return (
     <div className="mx-auto flex min-h-full max-w-lg flex-col scroll-pb-[calc(15rem+env(safe-area-inset-bottom,0px))] px-2 pb-[calc(15rem+env(safe-area-inset-bottom,0px))] pt-2 sm:px-3 sm:pb-[calc(15rem+env(safe-area-inset-bottom,0px))] sm:pt-3">
       <header className="mb-2 flex flex-col gap-1.5 sm:mb-3 sm:gap-2">
-        <div className="flex min-h-8 items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <Link
-              to="/"
-              className="grid h-8 min-h-8 w-8 min-w-8 shrink-0 place-items-center rounded-[6px] border border-slate-200 text-slate-700 dark:border-slate-600 dark:text-slate-200"
-              aria-label="All lists"
-              title="All lists"
-            >
-              <BackToListsIcon className="h-6 w-6 shrink-0" />
-            </Link>
-            <input
-              className="min-w-0 flex-1 rounded-[6px] border border-transparent bg-transparent py-1 text-lg font-semibold leading-tight text-slate-900 outline-none focus:border-slate-300 focus:bg-white dark:text-slate-50 dark:focus:border-slate-600 dark:focus:bg-slate-900"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onBlur={() => void persistTitle(title)}
-              placeholder="List name"
-              aria-label="List name"
-            />
-          </div>
-          <div ref={actionsMenuRef} className="relative flex shrink-0 items-center gap-1">
+        {/* Grid keeps back + title + toolbar on one row; flex-wrap was pushing controls off-screen / below fold */}
+        <div className="relative z-40 grid min-h-8 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+          <Link
+            to="/"
+            className="grid h-8 min-h-8 w-8 min-w-8 shrink-0 place-items-center rounded-[6px] border border-slate-200 text-slate-700 dark:border-slate-600 dark:text-slate-200"
+            aria-label="All lists"
+            title="All lists"
+          >
+            <BackToListsIcon className="h-6 w-6 shrink-0" />
+          </Link>
+          <input
+            className="min-w-0 w-full rounded-[6px] border border-transparent bg-transparent py-1 text-lg font-semibold leading-tight text-slate-900 outline-none focus:border-slate-300 focus:bg-white dark:text-slate-50 dark:focus:border-slate-600 dark:focus:bg-slate-900"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={() => void persistTitle(title)}
+            placeholder="List name"
+            aria-label="List name"
+          />
+          <div ref={actionsMenuRef} className="relative z-50 flex shrink-0 items-center justify-self-end gap-1">
             <button
               type="button"
               disabled={!canUndo}
@@ -1166,7 +1249,7 @@ export function ListPage() {
               <ToolbarIconMore className="h-6 w-6 shrink-0" />
             </button>
             {actionsOpen ? (
-              <div className="absolute right-0 top-9 z-20 w-56 rounded-[6px] border border-slate-200 bg-white p-2 text-xs shadow-md dark:border-slate-700 dark:bg-slate-900">
+              <div className="absolute right-0 top-full z-[100] mt-1 w-56 rounded-[6px] border border-slate-200 bg-white p-2 text-xs shadow-lg ring-1 ring-black/5 dark:border-slate-700 dark:bg-slate-900 dark:ring-white/10">
                 <button
                   type="button"
                   className="mb-1 block min-h-8 w-full rounded-[6px] px-2 py-1 text-left hover:bg-slate-100 active:bg-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
@@ -1189,7 +1272,7 @@ export function ListPage() {
                 </button>
                 <button
                   type="button"
-                  className="block min-h-8 w-full rounded-[6px] px-2 py-1 text-left hover:bg-slate-100 active:bg-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
+                  className="mb-1 block min-h-8 w-full rounded-[6px] px-2 py-1 text-left hover:bg-slate-100 active:bg-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
                   onClick={() => {
                     setActionsOpen(false)
                     void createInvite()
@@ -1197,6 +1280,30 @@ export function ListPage() {
                 >
                   Invite collaborator
                 </button>
+                <div className="border-t border-slate-200 pt-2 dark:border-slate-700">
+                  <div className="flex items-center justify-between gap-2 px-1">
+                    <span className="min-w-0 flex-1 text-left text-xs font-medium text-slate-900 dark:text-slate-100">
+                      Show prices
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={showPrices}
+                      aria-label="Show prices"
+                      onClick={() => setShowPrices((v) => !v)}
+                      className={`relative h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900 ${
+                        showPrices ? 'bg-teal-600' : 'bg-slate-300 dark:bg-slate-600'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${
+                          showPrices ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                        aria-hidden
+                      />
+                    </button>
+                  </div>
+                </div>
               </div>
             ) : null}
           </div>
@@ -1215,7 +1322,9 @@ export function ListPage() {
             >
               {presets.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name} (${(estimatedRemainingByStorePresetId.get(p.id) ?? 0).toFixed(2)})
+                  {showPrices
+                    ? `${p.name} ($${(estimatedRemainingByStorePresetId.get(p.id) ?? 0).toFixed(2)})`
+                    : p.name}
                 </option>
               ))}
             </select>
@@ -1279,14 +1388,19 @@ export function ListPage() {
                   <SortableItem
                     key={item.id}
                     item={item}
+                    showPrices={showPrices}
                     isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
                     estimatedLineCost={pricing.items[item.id]?.estimatedCost ?? 0}
                     hasYourPrice={parsePriceCalibrationForScope(item, priceCalibrationScopeKey) !== null}
-                    onOpenYourPrice={() => setPriceCalItemId(item.id)}
+                    onOpenYourPrice={showPrices ? () => setPriceCalItemId(item.id) : undefined}
+                    dragFromRow
+                    itemMenuVariant="overflow"
+                    onChangeCategory={openCategoryPicker}
                     onToggle={(id, c) => void toggleItem(id, c)}
                     onDelete={(id) => void deleteItem(id)}
                     onQuantityChange={(id, q) => void changeQuantity(id, q)}
                     onUnitChange={(id, u) => void changeUnit(id, u)}
+                    onTextChange={(id, t) => void changeItemText(id, t)}
                   />
                 ))}
               </ul>
@@ -1310,14 +1424,17 @@ export function ListPage() {
                   <SortableItem
                     key={item.id}
                     item={item}
+                    showPrices={showPrices}
                     isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
                     estimatedLineCost={pricing.items[item.id]?.estimatedCost ?? 0}
                     hasYourPrice={parsePriceCalibrationForScope(item, priceCalibrationScopeKey) !== null}
-                    onOpenYourPrice={() => setPriceCalItemId(item.id)}
+                    onOpenYourPrice={showPrices ? () => setPriceCalItemId(item.id) : undefined}
+                    dragFromRow
                     onToggle={(id, c) => void toggleItem(id, c)}
                     onDelete={(id) => void deleteItem(id)}
                     onQuantityChange={(id, q) => void changeQuantity(id, q)}
                     onUnitChange={(id, u) => void changeUnit(id, u)}
+                    onTextChange={(id, t) => void changeItemText(id, t)}
                   />
                 ))}
               </ul>
@@ -1325,55 +1442,100 @@ export function ListPage() {
           </section>
         </DndContext>
       ) : (
-        <div className="flex flex-col gap-3 sm:gap-4">
-          {categoryWalkOrder.map((key) => {
-            const rows = groupedBuckets.buckets[key] ?? []
-            if (!rows.length) return null
-            const collapsed = !!collapsedCategoryKeys[key]
-            return (
-              <section key={key} className="space-y-1">
-                <div className="flex items-center justify-between gap-2 py-0.5">
-                  <button
-                    type="button"
-                    className={`flex min-h-8 items-center gap-1 rounded-[6px] pl-2 pr-2 text-slate-600 dark:text-slate-400 ${
-                      collapsed
-                        ? 'bg-slate-100 hover:bg-slate-200 active:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 dark:active:bg-slate-700'
-                        : 'hover:bg-slate-100 active:bg-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800'
-                    }`}
-                    aria-expanded={!collapsed}
-                    aria-label={
-                      collapsed ? `Expand ${headingForCategoryKey(key)}` : `Collapse ${headingForCategoryKey(key)}`
-                    }
-                    onClick={() =>
-                      setCollapsedCategoryKeys((prev) => ({
-                        ...prev,
-                        [key]: !prev[key],
-                      }))
-                    }
-                  >
-                    {collapsed ? (
-                      <GroupCollapseChevronIcon className="h-6 w-6 shrink-0" />
-                    ) : (
-                      <GroupExpandChevronIcon className="h-6 w-6 shrink-0" />
-                    )}
-                    <span className="text-xs font-semibold">{headingForCategoryKey(key)}</span>
-                  </button>
-                  <span className="min-w-8" aria-hidden />
-                </div>
-                <div
-                  className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-200 ease-out ${
-                    collapsed ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
-                  }`}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => void onDragEnd(e)}>
+          <div className="flex flex-col gap-3 sm:gap-4">
+            <SortableContext items={activeSorted.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+              {categoryWalkOrder.map((key) => {
+                const rows = groupedBuckets.buckets[key] ?? []
+                if (!rows.length) return null
+                const collapsed = !!collapsedCategoryKeys[key]
+                return (
+                  <section key={key} className="space-y-1">
+                    <div className="flex items-center justify-between gap-2 py-0.5">
+                      <button
+                        type="button"
+                        className={`flex min-h-8 items-center gap-1 rounded-[6px] pl-2 pr-2 text-slate-600 dark:text-slate-400 ${
+                          collapsed
+                            ? 'bg-slate-100 hover:bg-slate-200 active:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 dark:active:bg-slate-700'
+                            : 'hover:bg-slate-100 active:bg-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800'
+                        }`}
+                        aria-expanded={!collapsed}
+                        aria-label={
+                          collapsed ? `Expand ${headingForCategoryKey(key)}` : `Collapse ${headingForCategoryKey(key)}`
+                        }
+                        onClick={() =>
+                          setCollapsedCategoryKeys((prev) => ({
+                            ...prev,
+                            [key]: !prev[key],
+                          }))
+                        }
+                      >
+                        {collapsed ? (
+                          <GroupCollapseChevronIcon className="h-6 w-6 shrink-0" />
+                        ) : (
+                          <GroupExpandChevronIcon className="h-6 w-6 shrink-0" />
+                        )}
+                        <span className="text-xs font-semibold">{headingForCategoryKey(key)}</span>
+                      </button>
+                      <span className="min-w-8" aria-hidden />
+                    </div>
+                    <div
+                      className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-200 ease-out ${
+                        collapsed ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
+                      }`}
+                    >
+                      <ul className="min-h-0 flex flex-col gap-0 divide-y divide-slate-100 overflow-hidden rounded-[6px] bg-white dark:divide-slate-800 dark:bg-slate-900">
+                        {rows.map((item) => (
+                          <SortableItem
+                            key={item.id}
+                            item={item}
+                            showPrices={showPrices}
+                            isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
+                            estimatedLineCost={pricing.items[item.id]?.estimatedCost ?? 0}
+                            hasYourPrice={parsePriceCalibrationForScope(item, priceCalibrationScopeKey) !== null}
+                            onOpenYourPrice={showPrices ? () => setPriceCalItemId(item.id) : undefined}
+                            disableDrag
+                            inGroupedBlock
+                            itemMenuVariant="overflow"
+                            onChangeCategory={openCategoryPicker}
+                            showDragHandle={false}
+                            onToggle={(id, c) => void toggleItem(id, c)}
+                            onDelete={(id) => void deleteItem(id)}
+                            onQuantityChange={(id, q) => void changeQuantity(id, q)}
+                            onUnitChange={(id, u) => void changeUnit(id, u)}
+                            onTextChange={(id, t) => void changeItemText(id, t)}
+                          />
+                        ))}
+                      </ul>
+                    </div>
+                  </section>
+                )
+              })}
+            </SortableContext>
+            <section>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-slate-500">Completed</h2>
+                <button
+                  type="button"
+                  className="min-h-8 rounded-[6px] border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 active:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:active:bg-slate-800 disabled:opacity-40"
+                  onClick={() => void deleteCompletedItems()}
+                  disabled={!completedSorted.length}
                 >
-                  <ul className="min-h-0 flex flex-col gap-0 divide-y divide-slate-100 overflow-hidden rounded-[6px] bg-white dark:divide-slate-800 dark:bg-slate-900">
-                    {rows.map((item) => (
+                  Delete completed items
+                </button>
+              </div>
+              {completedSorted.length ? (
+                <SortableContext items={completedSorted.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+                  <ul className="flex flex-col gap-0 divide-y divide-slate-100 overflow-hidden rounded-[6px] bg-white dark:divide-slate-800 dark:bg-slate-900">
+                    {completedSorted.map((item) => (
                       <SortableItem
                         key={item.id}
                         item={item}
+                        showPrices={showPrices}
                         isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
                         estimatedLineCost={pricing.items[item.id]?.estimatedCost ?? 0}
                         hasYourPrice={parsePriceCalibrationForScope(item, priceCalibrationScopeKey) !== null}
-                        onOpenYourPrice={() => setPriceCalItemId(item.id)}
+                        onOpenYourPrice={showPrices ? () => setPriceCalItemId(item.id) : undefined}
                         disabled
                         inGroupedBlock
                         enableLongPressCategoryChange
@@ -1382,51 +1544,16 @@ export function ListPage() {
                         onDelete={(id) => void deleteItem(id)}
                         onQuantityChange={(id, q) => void changeQuantity(id, q)}
                         onUnitChange={(id, u) => void changeUnit(id, u)}
+                        onTextChange={(id, t) => void changeItemText(id, t)}
                         onLongPressCategoryChange={openCategoryPicker}
                       />
                     ))}
                   </ul>
-                </div>
-              </section>
-            )
-          })}
-          <section>
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-slate-500">Completed</h2>
-              <button
-                type="button"
-                className="min-h-8 rounded-[6px] border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 active:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:active:bg-slate-800 disabled:opacity-40"
-                onClick={() => void deleteCompletedItems()}
-                disabled={!completedSorted.length}
-              >
-                Delete completed items
-              </button>
-            </div>
-            {completedSorted.length ? (
-              <ul className="flex flex-col gap-0 divide-y divide-slate-100 overflow-hidden rounded-[6px] bg-white dark:divide-slate-800 dark:bg-slate-900">
-                {completedSorted.map((item) => (
-                  <SortableItem
-                    key={item.id}
-                    item={item}
-                    isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
-                    estimatedLineCost={pricing.items[item.id]?.estimatedCost ?? 0}
-                    hasYourPrice={parsePriceCalibrationForScope(item, priceCalibrationScopeKey) !== null}
-                    onOpenYourPrice={() => setPriceCalItemId(item.id)}
-                    disabled
-                    inGroupedBlock
-                    enableLongPressCategoryChange
-                    showDragHandle={false}
-                    onToggle={(id, c) => void toggleItem(id, c)}
-                    onDelete={(id) => void deleteItem(id)}
-                    onQuantityChange={(id, q) => void changeQuantity(id, q)}
-                    onUnitChange={(id, u) => void changeUnit(id, u)}
-                    onLongPressCategoryChange={openCategoryPicker}
-                  />
-                ))}
-              </ul>
-            ) : null}
-          </section>
-        </div>
+                </SortableContext>
+              ) : null}
+            </section>
+          </div>
+        </DndContext>
       )}
 
       <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-slate-200 bg-white/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 sm:px-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:pt-3">
@@ -1440,7 +1567,7 @@ export function ListPage() {
             />
             {newUnit === 'each' ? (
               <select
-                className="min-h-8 w-20 appearance-none rounded-[6px] border border-slate-200 bg-white bg-[length:0] px-2 text-right text-sm [background-image:none] dark:border-slate-600 dark:bg-slate-950 [&::-webkit-appearance]:none"
+                className="box-border min-h-8 w-[40px] min-w-[40px] max-w-[40px] shrink-0 appearance-none rounded-[6px] border border-slate-200 bg-white bg-[length:0] px-0.5 text-center text-sm tabular-nums [background-image:none] dark:border-slate-600 dark:bg-slate-950 [&::-webkit-appearance]:none"
                 value={Math.min(20, Math.max(1, Math.round(Number(newQty)) || 1))}
                 onChange={(e) => {
                   const v = Number(e.target.value)
@@ -1459,7 +1586,7 @@ export function ListPage() {
               <input
                 type="text"
                 inputMode="decimal"
-                className="min-h-8 w-20 rounded-[6px] border border-slate-200 bg-white px-2 py-2 text-right text-sm dark:border-slate-600 dark:bg-slate-950"
+                className="box-border min-h-8 w-[40px] min-w-[40px] max-w-[40px] shrink-0 rounded-[6px] border border-slate-200 bg-white px-0.5 py-2 text-center text-sm tabular-nums dark:border-slate-600 dark:bg-slate-950"
                 value={newQtyText}
                 onChange={(e) => setNewQtyText(e.target.value)}
                 onBlur={() => {
@@ -1495,18 +1622,29 @@ export function ListPage() {
               ))}
             </select>
           </div>
-          <button
-            type="button"
-            className="min-h-8 w-full rounded-[6px] bg-teal-700 py-3 text-sm font-semibold text-white"
-            onClick={() => void addItem()}
-          >
-            Add to list
-          </button>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Total estimated cost: ${pricing.totalEstimatedCost.toFixed(2)}
-            <span aria-hidden="true"> | </span>
-            Remaining cost: ${remainingEstimatedCost.toFixed(2)}
-          </p>
+          <div className="flex gap-1.5 sm:gap-2">
+            <button
+              type="button"
+              className="min-h-10 shrink-0 rounded-[6px] bg-slate-200 px-3 text-sm font-medium text-slate-800 dark:bg-slate-600 dark:text-slate-100"
+              onClick={() => setRecipeUrlOpen(true)}
+            >
+              Add URL
+            </button>
+            <button
+              type="button"
+              className="min-h-10 min-w-0 flex-1 rounded-[6px] bg-teal-700 py-3 text-sm font-semibold text-white"
+              onClick={() => void addItem()}
+            >
+              Add to list
+            </button>
+          </div>
+          {showPrices ? (
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Total estimated cost: ${pricing.totalEstimatedCost.toFixed(2)}
+              <span aria-hidden="true"> | </span>
+              Remaining cost: ${remainingEstimatedCost.toFixed(2)}
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -1516,8 +1654,25 @@ export function ListPage() {
         suggestions={suggestions}
         storePresetId={list?.store_preset_id ?? null}
         presets={presets}
+        showPrices={showPrices}
         onDismiss={(fp, text) => void dismissRecommendation(fp, text)}
-        onAddBatch={(rows) => void addRecommendationsBatch(rows)}
+        onAddBatch={(rows) => addRecommendationsBatch(rows)}
+      />
+
+      <RecipeUrlImportDrawer
+        key={recipeUrlImportKey}
+        open={recipeUrlOpen}
+        onClose={() => setRecipeUrlOpen(false)}
+        showPrices={showPrices}
+        itemsForMatch={items.map((i) => ({
+          text: i.text,
+          checked: i.checked,
+          quantity: i.quantity,
+          unit: i.unit,
+        }))}
+        storePresetId={list?.store_preset_id ?? null}
+        presets={presets}
+        onAddBatch={(rows) => addRecipeUrlImportBatch(rows)}
       />
 
       {priceCalItem ? (
