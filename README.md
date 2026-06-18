@@ -2,15 +2,17 @@
 
 ## Recipe import (“Add URL”)
 
-In **development**, `npm run dev` uses a built-in Vite middleware at `/api/recipe-proxy` so the app can load external recipe pages and parse ingredients (JSON-LD `Recipe`, WP Recipe Maker, or `itemprop="recipeIngredient"`).
+The app loads recipe pages **through a same-origin proxy** so the browser never does a cross-origin `fetch` to a random recipe site (those almost always block CORS).
 
-For **production** builds (and hosted PWA), browsers cannot fetch arbitrary recipe URLs (CORS). Deploy the Supabase Edge Function in `supabase/functions/recipe-proxy`, then set in `.env`:
+- **Local:** `npm run dev` — Vite serves `GET /api/recipe-proxy?url=…` (see `vite.config.ts`).
+- **Vercel:** deploy includes `api/recipe-proxy.js` — same path in production.
+
+Optional override: set `VITE_RECIPE_FETCH_URL` to another proxy (e.g. Supabase Edge Function `https://<project-ref>.supabase.co/functions/v1/recipe-proxy`). For `supabase.co` hosts, the app sends `apikey` / `Authorization` using `VITE_SUPABASE_ANON_KEY`.
 
 ```bash
+# Example only — use your project ref
 VITE_RECIPE_FETCH_URL=https://<project-ref>.supabase.co/functions/v1/recipe-proxy
 ```
-
-The app will send `?url=` and, for `supabase.co` hosts, attach `apikey` / `Authorization` using `VITE_SUPABASE_ANON_KEY`.
 
 ---
 

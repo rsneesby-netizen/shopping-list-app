@@ -12,6 +12,9 @@
 html {
   /* Avoid grey flash on taps (mobile) interfering with gestures */
   -webkit-tap-highlight-color: transparent;
+  /* Avoid automatic font inflation on orientation / layout changes (iOS) */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 html,
@@ -43,5 +46,18 @@ select,
   body {
     background: #0f172a;
     color: #f1f5f9;
+  }
+}
+
+/*
+ * iOS Safari (and some Android browsers) zoom the viewport when a focused form
+ * control’s computed font-size is under ~16px. Use a real 16px minimum on
+ * narrow viewports instead of locking maximum-scale (keeps pinch-zoom accessible).
+ */
+@media (pointer: coarse), (max-width: 639px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='hidden']):not([type='button']):not([type='submit']):not([type='reset']),
+  textarea,
+  select {
+    font-size: 16px !important;
   }
 }

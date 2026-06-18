@@ -4,7 +4,7 @@
  * Resolution order:
  * 1. `VITE_RECIPE_FETCH_URL` — e.g. deployed Supabase Edge Function `https://<ref>.supabase.co/functions/v1/recipe-proxy`
  *    (append `?url=`). If the URL host is `supabase.co`, anon key headers are added automatically.
- * 2. Dev-only: Vite middleware `/api/recipe-proxy?url=` (see vite.config.ts).
+ * 2. Same-origin `/api/recipe-proxy?url=` — Vite dev middleware (see vite.config.ts) or Vercel `api/recipe-proxy.js`.
  * 3. Direct `fetch(url)` — only works if the recipe site sends permissive CORS (rare).
  */
 
@@ -14,6 +14,38 @@ function isSupabaseFunctionUrl(u: string): boolean {
   } catch {
     return false
   }
+}
+
+/** Built-in proxy path (dev middleware or Vercel serverless). Returns `undefined` if not available. */
+async function fetchViaSameOriginProxy(trimmed: string): Promise<string | undefined> {
+  const local = `/api/recipe-proxy?url=${encodeURIComponent(trimmed)}`
+  let res: Response
+  try {
+    res = await fetch(local)
+  } catch {
+    return undefined
+  }
+  const ct = res.headers.get('content-type') ?? ''
+  if (ct.includes('text/html')) {
+    return undefined
+  }
+  const text = await res.text()
+  let body: unknown
+  try {
+    body = JSON.parse(text) as { html?: string; error?: string }
+  } catch {
+    return undefined
+  }
+  if (!res.ok) {
+    if (res.status === 404) return undefined
+    const err =
+      typeof body === 'object' && body && 'error' in body ? String((body as { error: unknown }).error) : text
+    throw new Error(err || `Proxy HTTP ${res.status}`)
+  }
+  if (typeof body === 'object' && body && typeof (body as { html?: unknown }).html === 'string') {
+    return (body as { html: string }).html
+  }
+  return undefined
 }
 
 export async function fetchRecipeHtml(url: string): Promise<string> {
@@ -51,18 +83,9 @@ export async function fetchRecipeHtml(url: string): Promise<string> {
     throw new Error('Recipe proxy response missing html field.')
   }
 
-  if (import.meta.env.DEV) {
-    const local = `/api/recipe-proxy?url=${encodeURIComponent(trimmed)}`
-    const res = await fetch(local)
-    const text = await res.text()
-    try {
-      const body = JSON.parse(text) as { html?: string; error?: string }
-      if (!res.ok) throw new Error(body.error || `Local proxy HTTP ${res.status}`)
-      if (typeof body.html === 'string') return body.html
-    } catch (e) {
-      if (e instanceof SyntaxError) throw new Error('Dev recipe proxy returned invalid JSON.')
-      throw e
-    }
+  const viaProxy = await fetchViaSameOriginProxy(trimmed)
+  if (viaProxy !== undefined) {
+    return viaProxy
   }
 
   try {
@@ -71,7 +94,7 @@ export async function fetchRecipeHtml(url: string): Promise<string> {
     return await res.text()
   } catch {
     throw new Error(
-      'Could not load that page from the browser (blocked by the site’s CORS policy). Run `npm run dev` to use the built-in dev proxy, or deploy the Supabase `recipe-proxy` function and set VITE_RECIPE_FETCH_URL in `.env`.',
+      'Could not load that recipe page (blocked by the site’s CORS policy in the browser). On Vercel, deploy with the included `api/recipe-proxy` route, run `npm run dev` locally, or set `VITE_RECIPE_FETCH_URL` to a deployed Supabase `recipe-proxy` function (see README).',
     )
   }
 }
