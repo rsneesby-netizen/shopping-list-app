@@ -1249,10 +1249,14 @@ export function ListPage() {
               <ToolbarIconMore className="h-6 w-6 shrink-0" />
             </button>
             {actionsOpen ? (
-              <div className="absolute right-0 top-full z-[100] mt-1 w-56 rounded-[6px] border border-slate-200 bg-white p-2 text-xs shadow-lg ring-1 ring-black/5 dark:border-slate-700 dark:bg-slate-900 dark:ring-white/10">
+              <div
+                role="menu"
+                className="absolute right-0 top-full z-[100] mt-1 w-52 rounded-[6px] border border-slate-200 bg-white py-0.5 text-[14px] shadow-lg ring-1 ring-black/5 dark:border-slate-700 dark:bg-slate-900 dark:ring-white/10"
+              >
                 <button
                   type="button"
-                  className="mb-1 block min-h-8 w-full rounded-[6px] px-2 py-1 text-left hover:bg-slate-100 active:bg-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
+                  role="menuitem"
+                  className="flex min-h-10 w-full items-center px-3 text-left text-[14px] text-slate-800 hover:bg-slate-100 active:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
                   onClick={() => {
                     setActionsOpen(false)
                     setCatOpen(true)
@@ -1262,7 +1266,8 @@ export function ListPage() {
                 </button>
                 <button
                   type="button"
-                  className="mb-1 block min-h-8 w-full rounded-[6px] px-2 py-1 text-left hover:bg-slate-100 active:bg-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
+                  role="menuitem"
+                  className="flex min-h-10 w-full items-center px-3 text-left text-[14px] text-slate-800 hover:bg-slate-100 active:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
                   onClick={() => {
                     setActionsOpen(false)
                     setStoresOpen(true)
@@ -1272,7 +1277,8 @@ export function ListPage() {
                 </button>
                 <button
                   type="button"
-                  className="mb-1 block min-h-8 w-full rounded-[6px] px-2 py-1 text-left hover:bg-slate-100 active:bg-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
+                  role="menuitem"
+                  className="flex min-h-10 w-full items-center px-3 text-left text-[14px] text-slate-800 hover:bg-slate-100 active:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
                   onClick={() => {
                     setActionsOpen(false)
                     void createInvite()
@@ -1280,9 +1286,9 @@ export function ListPage() {
                 >
                   Invite collaborator
                 </button>
-                <div className="border-t border-slate-200 pt-2 dark:border-slate-700">
-                  <div className="flex items-center justify-between gap-2 px-1">
-                    <span className="min-w-0 flex-1 text-left text-xs font-medium text-slate-900 dark:text-slate-100">
+                <div className="border-t border-slate-200 dark:border-slate-700">
+                  <div className="flex min-h-10 items-center justify-between gap-2 px-3 py-0.5">
+                    <span className="min-w-0 flex-1 text-left text-[14px] font-medium text-slate-900 dark:text-slate-100">
                       Show prices
                     </span>
                     <button
@@ -1536,7 +1542,6 @@ export function ListPage() {
                         estimatedLineCost={pricing.items[item.id]?.estimatedCost ?? 0}
                         hasYourPrice={parsePriceCalibrationForScope(item, priceCalibrationScopeKey) !== null}
                         onOpenYourPrice={showPrices ? () => setPriceCalItemId(item.id) : undefined}
-                        disabled
                         inGroupedBlock
                         enableLongPressCategoryChange
                         showDragHandle={false}
@@ -1567,7 +1572,7 @@ export function ListPage() {
             />
             {newUnit === 'each' ? (
               <select
-                className="box-border min-h-8 w-[40px] min-w-[40px] max-w-[40px] shrink-0 appearance-none rounded-[6px] border border-slate-200 bg-white bg-[length:0] px-0.5 text-center text-sm tabular-nums [background-image:none] dark:border-slate-600 dark:bg-slate-950 [&::-webkit-appearance]:none"
+                className="box-border min-h-8 w-[40px] min-w-[40px] max-w-[40px] shrink-0 appearance-none rounded-[6px] border border-slate-200 bg-white bg-[length:0] px-1 text-center text-sm tabular-nums [text-align-last:center] [background-image:none] dark:border-slate-600 dark:bg-slate-950 [&::-webkit-appearance]:none"
                 value={Math.min(20, Math.max(1, Math.round(Number(newQty)) || 1))}
                 onChange={(e) => {
                   const v = Number(e.target.value)
@@ -1586,7 +1591,7 @@ export function ListPage() {
               <input
                 type="text"
                 inputMode="decimal"
-                className="box-border min-h-8 w-[40px] min-w-[40px] max-w-[40px] shrink-0 rounded-[6px] border border-slate-200 bg-white px-0.5 py-2 text-center text-sm tabular-nums dark:border-slate-600 dark:bg-slate-950"
+                className="box-border min-h-8 w-[40px] min-w-[40px] max-w-[40px] shrink-0 rounded-[6px] border border-slate-200 bg-white px-1 py-2 text-center text-sm tabular-nums [text-align-last:center] dark:border-slate-600 dark:bg-slate-950"
                 value={newQtyText}
                 onChange={(e) => setNewQtyText(e.target.value)}
                 onBlur={() => {

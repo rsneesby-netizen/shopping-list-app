@@ -17,7 +17,7 @@ const EACH_QUANTITY_OPTIONS = Array.from({ length: 20 }, (_, i) => i + 1)
 
 /** 32×32 quantity control, subtle border at rest */
 const qtyBoxClass =
-  'box-border h-8 w-[40px] min-w-[40px] max-w-[40px] shrink-0 rounded border border-slate-200/80 bg-white text-center text-xs tabular-nums text-slate-700 outline-none focus:border-slate-400 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-500'
+  'box-border h-8 w-[40px] min-w-[40px] max-w-[40px] shrink-0 rounded border border-slate-200/80 bg-white px-1 text-center text-xs tabular-nums text-slate-700 [text-align-last:center] outline-none focus:border-slate-400 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-500'
 
 const noChevron =
   'appearance-none bg-[length:0] [background-image:none] [&::-webkit-appearance]:none'
@@ -299,7 +299,7 @@ export function SortableItem({
             value={eachQuantityValue(item.quantity)}
             onPointerDown={blockDragFromControl}
             onChange={(e) => onQuantityChange(item.id, Number(e.target.value))}
-            className={`${qtyBoxClass} ${noChevron} px-0.5`}
+            className={`${qtyBoxClass} ${noChevron}`}
             aria-label="Quantity"
           >
             {EACH_QUANTITY_OPTIONS.map((n) => (
@@ -320,7 +320,7 @@ export function SortableItem({
             onKeyDown={(e) => {
               if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
             }}
-            className={`${qtyBoxClass} [appearance:textfield] px-0.5 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+            className={`${qtyBoxClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
             aria-label="Quantity"
           />
         )}

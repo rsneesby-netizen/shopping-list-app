@@ -23,9 +23,9 @@ import {
 import type { StorePresetRow } from '../../types'
 
 const qtyBoxClass =
-  'box-border h-8 w-[40px] min-w-[40px] max-w-[40px] shrink-0 rounded border border-slate-200/80 bg-white text-center text-xs tabular-nums text-slate-700 outline-none focus:border-slate-400 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-500'
+  'box-border h-8 w-[40px] min-w-[40px] max-w-[40px] shrink-0 rounded border border-slate-200/80 bg-white px-1 text-center text-xs tabular-nums text-slate-700 [text-align-last:center] outline-none focus:border-slate-400 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-500'
 
-const qtyTextInputClass = `${qtyBoxClass} [appearance:textfield] px-0.5 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`
+const qtyTextInputClass = `${qtyBoxClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`
 
 const noChevron =
   'appearance-none bg-[length:0] [background-image:none] [&::-webkit-appearance]:none'
@@ -441,7 +441,7 @@ export function RecipeUrlImportDrawer({
                         <div className="flex shrink-0 items-center gap-1">
                           {isEach ? (
                             <select
-                              className={`${qtyBoxClass} ${noChevron} px-0.5`}
+                              className={`${qtyBoxClass} ${noChevron}`}
                               value={eachQty(r.qty)}
                               onChange={(e) => {
                                 const v = Number(e.target.value)
@@ -559,7 +559,7 @@ export function RecipeUrlImportDrawer({
                         <div className="flex shrink-0 items-center gap-1">
                           {isEach ? (
                             <select
-                              className={`${qtyBoxClass} ${noChevron} px-0.5`}
+                              className={`${qtyBoxClass} ${noChevron}`}
                               value={eachQty(r.qty)}
                               onChange={(e) => {
                                 const v = Number(e.target.value)
