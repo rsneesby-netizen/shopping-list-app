@@ -87,6 +87,9 @@ export default defineConfig({
         ],
       },
       workbox: {
+        cleanupOutdatedCaches: true,
+        skipWaiting: true,
+        clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,ico,svg,png,woff2}'],
         // Deep links like /lists/:id must serve the SPA shell (avoids SW 404 on navigation).
         navigateFallback: '/index.html',
