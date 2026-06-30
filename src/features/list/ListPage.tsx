@@ -59,8 +59,16 @@ import { RecipeUrlImportDrawer, type RecipeUrlImportBatchRow } from './RecipeUrl
 import { RecommendationsDrawer, type RecommendationBatchRow } from './RecommendationsDrawer'
 import { SortableItem } from './SortableItem'
 import { StoresManageModal } from './StoresManageModal'
-import { BackToListsIcon, GroupCollapseChevronIcon, GroupExpandChevronIcon } from './listIcons'
-import { ToolbarIconMore, ToolbarIconRecommended, ToolbarIconRedo, ToolbarIconUndo } from './toolbarIcons'
+import { BackToListsIcon } from './listIcons'
+import {
+  ToolbarIconMore,
+  ToolbarIconPlan,
+  ToolbarIconRedo,
+  ToolbarIconShop,
+  ToolbarIconUndo,
+  ToolbarIconViewFlat,
+  ToolbarIconViewGrouped,
+} from './toolbarIcons'
 
 function clonePriceCalibrationByScope(m: ListItemRow['price_calibration_by_scope']): Record<string, unknown> {
   if (m && typeof m === 'object' && !Array.isArray(m)) {
@@ -71,6 +79,12 @@ function clonePriceCalibrationByScope(m: ListItemRow['price_calibration_by_scope
 
 const ADD_EACH_QTY_OPTIONS = Array.from({ length: 20 }, (_, i) => i + 1)
 type PendingAdd = { text: string; qty: number; unit: string }
+type HeaderMode = 'plan' | 'shop'
+type ListView = 'flat' | 'grouped'
+const MODE_DEFAULT_VIEW: Record<HeaderMode, ListView> = { plan: 'flat', shop: 'grouped' }
+
+const HEADER_MODE_KEY = 'list-header-mode-v1'
+const HEADER_VIEW_KEY = 'list-header-view-v1'
 
 export function ListPage() {
   const { listId } = useParams()
@@ -92,14 +106,28 @@ export function ListPage() {
   /** Text field for L / g quantity in add bar (validates on blur / add) */
   const [newQtyText, setNewQtyText] = useState('1')
   const [newUnit, setNewUnit] = useState('each')
-  const [view, setView] = useState<'flat' | 'grouped'>('flat')
+  const [footerExpanded, setFooterExpanded] = useState(false)
+  const [footerClosing, setFooterClosing] = useState(false)
+  const [qtyTouched, setQtyTouched] = useState(false)
+  const [unitTouched, setUnitTouched] = useState(false)
+  const [mode, setMode] = useState<HeaderMode>(() => {
+    if (typeof window === 'undefined') return 'plan'
+    return window.localStorage.getItem(HEADER_MODE_KEY) === 'shop' ? 'shop' : 'plan'
+  })
+  const [view, setView] = useState<ListView>(() => {
+    if (typeof window === 'undefined') return MODE_DEFAULT_VIEW.plan
+    const raw = window.localStorage.getItem(HEADER_VIEW_KEY)
+    if (raw === 'flat' || raw === 'grouped') return raw
+    const savedMode = window.localStorage.getItem(HEADER_MODE_KEY) === 'shop' ? 'shop' : 'plan'
+    return MODE_DEFAULT_VIEW[savedMode]
+  })
   const [recOpen, setRecOpen] = useState(false)
   const [recipeUrlOpen, setRecipeUrlOpen] = useState(false)
   /** Remount recipe URL drawer so internal state resets each time it opens */
   const [recipeUrlImportKey, setRecipeUrlImportKey] = useState(0)
   const [catOpen, setCatOpen] = useState(false)
   const [storesOpen, setStoresOpen] = useState(false)
-  const [actionsOpen, setActionsOpen] = useState(false)
+  const [headerAction, setHeaderAction] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [inviteUrl, setInviteUrl] = useState<string | null>(null)
   const [pendingDuplicateAdd, setPendingDuplicateAdd] = useState<PendingAdd | null>(null)
@@ -110,11 +138,15 @@ export function ListPage() {
   /** Item id when "your price" sheet is open */
   const [priceCalItemId, setPriceCalItemId] = useState<string | null>(null)
   /** Off by default; remembered in localStorage */
-  const [showPrices, setShowPrices] = useState(() => readShowPricesPreference())
-  const actionsMenuRef = useRef<HTMLDivElement | null>(null)
+  const [showPrices] = useState(() => readShowPricesPreference())
+  const [headerElevated, setHeaderElevated] = useState(false)
+  const addItemInputRef = useRef<HTMLInputElement>(null)
+  const footerSwipeStartYRef = useRef<number | null>(null)
+  const footerSwipePointerIdRef = useRef<number | null>(null)
+  const footerCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 80 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
@@ -179,6 +211,38 @@ export function ListPage() {
   useEffect(() => {
     writeShowPricesPreference(showPrices)
   }, [showPrices])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(HEADER_MODE_KEY, mode)
+  }, [mode])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(HEADER_VIEW_KEY, view)
+  }, [view])
+
+  useEffect(() => {
+    setFooterExpanded(false)
+    setFooterClosing(false)
+    setQtyTouched(false)
+    setUnitTouched(false)
+  }, [mode])
+
+  useEffect(() => {
+    return () => {
+      if (footerCloseTimerRef.current) clearTimeout(footerCloseTimerRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    function onScroll() {
+      setHeaderElevated(window.scrollY > 4)
+    }
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
 
   const refreshStoreCatalog = useCallback(async () => {
     const [{ data: presetRows, error: e1 }, { data: pcRows, error: e2 }] = await Promise.all([
@@ -312,6 +376,55 @@ export function ListPage() {
     () => buildSuggestions(events, items),
     [events, items],
   )
+  const smartGuessByFingerprint = useMemo(() => {
+    const map = new Map<string, { qty: number; unit: string }>()
+    for (const s of suggestions) {
+      map.set(s.fingerprint, { qty: s.suggestedQty, unit: normalizeUnit(s.unit) })
+    }
+    for (const e of events) {
+      if (e.event_type !== 'item_checked' || !e.fingerprint) continue
+      const p = (e.payload ?? {}) as Record<string, unknown>
+      const q = Number(p.quantity)
+      const u = normalizeUnit(String(p.unit ?? 'each'))
+      if (Number.isFinite(q) && q > 0 && !map.has(e.fingerprint)) {
+        map.set(e.fingerprint, { qty: q, unit: u })
+      }
+    }
+    return map
+  }, [events, suggestions])
+
+  function inferUnitFromText(text: string): string {
+    const t = text.toLowerCase()
+    if (/\b(ml|millilit|milk|juice|oil|broth|stock|vinegar|soy|water)\b/.test(t)) return 'ml'
+    if (/\b(l|litre|liter|soda|soft drink)\b/.test(t)) return 'L'
+    if (/\b(kg|kilogram)\b/.test(t)) return 'kg'
+    if (/\b(g|gram|flour|sugar|rice|pasta|salt|pepper|mince|beef|chicken)\b/.test(t)) return 'g'
+    if (/\b(tsp|teaspoon)\b/.test(t)) return 'tsp'
+    if (/\b(tbsp|tablespoon)\b/.test(t)) return 'tbs'
+    return 'each'
+  }
+
+  useEffect(() => {
+    const text = newText.trim()
+    if (!text) {
+      if (!qtyTouched) {
+        setNewQty(1)
+        setNewQtyText('1')
+      }
+      if (!unitTouched) setNewUnit('each')
+      return
+    }
+    const fp = fingerprintFromText(text)
+    const guess = smartGuessByFingerprint.get(fp)
+    const guessedUnit = normalizeUnit(guess?.unit ?? inferUnitFromText(text))
+    const guessedQty = clampQuantityForUnit(guessedUnit, guess?.qty ?? 1)
+    if (guessedQty == null) return
+    if (!unitTouched) setNewUnit(guessedUnit)
+    if (!qtyTouched) {
+      setNewQty(guessedQty)
+      setNewQtyText(formatQuantityForInput(guessedUnit, guessedQty))
+    }
+  }, [newText, qtyTouched, unitTouched, smartGuessByFingerprint])
 
   async function persistTitle(next: string) {
     if (!listId) return
@@ -336,24 +449,25 @@ export function ListPage() {
     void persistPreset(fallbackPresetId)
   }, [listId, list, presets])
 
-  useEffect(() => {
-    if (!actionsOpen) return
-    function onDocMouseDown(event: MouseEvent) {
-      const target = event.target
-      if (!(target instanceof Node)) return
-      if (actionsMenuRef.current?.contains(target)) return
-      setActionsOpen(false)
-    }
-    function onDocKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') setActionsOpen(false)
-    }
-    document.addEventListener('mousedown', onDocMouseDown)
-    document.addEventListener('keydown', onDocKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', onDocMouseDown)
-      document.removeEventListener('keydown', onDocKeyDown)
-    }
-  }, [actionsOpen])
+  function toggleMode() {
+    setMode((prev) => {
+      const next = prev === 'plan' ? 'shop' : 'plan'
+      setView(MODE_DEFAULT_VIEW[next])
+      return next
+    })
+  }
+
+  function toggleView() {
+    setView(view === 'flat' ? 'grouped' : 'flat')
+  }
+
+  function handleHeaderActionChange(value: string) {
+    if (!value) return
+    if (value === 'aisles') setCatOpen(true)
+    if (value === 'stores') setStoresOpen(true)
+    if (value === 'invite') void createInvite()
+    setHeaderAction('')
+  }
 
   async function insertItem(text: string, qty: number, unit: string) {
     if (!listId) return
@@ -483,6 +597,8 @@ export function ListPage() {
     setNewQty(1)
     setNewQtyText('1')
     setNewUnit('each')
+    setQtyTouched(false)
+    setUnitTouched(false)
     setError(null)
   }
 
@@ -1125,16 +1241,6 @@ export function ListPage() {
     [items, list?.store_preset_id, presets, priceLearnings],
   )
 
-  /** Local remaining (unchecked) estimate per store preset for dropdown labels. */
-  const estimatedRemainingByStorePresetId = useMemo(() => {
-    const unchecked = items.filter((i) => !i.checked)
-    const m = new Map<string, number>()
-    for (const p of presets) {
-      m.set(p.id, estimateListPricing(unchecked, p.id, presets, priceLearnings).totalEstimatedCost)
-    }
-    return m
-  }, [items, presets, priceLearnings])
-
   const pricingFetchKey = useMemo(
     () =>
       `${list?.store_preset_id ?? ''}:${presets.map((p) => `${p.id}:${p.slug}`).join(',')}:${items
@@ -1185,6 +1291,15 @@ export function ListPage() {
     () => (priceCalItemId ? items.find((i) => i.id === priceCalItemId) ?? null : null),
     [priceCalItemId, items],
   )
+  const selectedStoreName = useMemo(() => {
+    const id = list?.store_preset_id ?? ''
+    const match = presets.find((p) => p.id === id)
+    return match?.name ?? 'Store layout'
+  }, [list?.store_preset_id, presets])
+  const storeSelectorWidthCh = useMemo(
+    () => Math.max(12, selectedStoreName.length + 4),
+    [selectedStoreName],
+  )
 
   function openCategoryPicker(itemId: string) {
     const item = items.find((i) => i.id === itemId)
@@ -1193,185 +1308,198 @@ export function ListPage() {
     setCategoryTargetKey(inferCategoryKey(item.text, item.category_key))
   }
 
+  function openFooterAddMode() {
+    if (footerCloseTimerRef.current) {
+      clearTimeout(footerCloseTimerRef.current)
+      footerCloseTimerRef.current = null
+    }
+    setFooterClosing(false)
+    setFooterExpanded(true)
+    requestAnimationFrame(() => {
+      addItemInputRef.current?.focus()
+    })
+  }
+
+  function dismissFooterAddMode() {
+    if (!footerExpanded) return
+    if (footerCloseTimerRef.current) clearTimeout(footerCloseTimerRef.current)
+    setFooterClosing(true)
+    footerCloseTimerRef.current = setTimeout(() => {
+      setFooterExpanded(false)
+      setFooterClosing(false)
+      footerCloseTimerRef.current = null
+    }, 180)
+  }
+
+  function handleFooterSheetPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.pointerType !== 'touch' && e.pointerType !== 'mouse') return
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    footerSwipeStartYRef.current = e.clientY
+    footerSwipePointerIdRef.current = e.pointerId
+  }
+
+  function handleFooterSheetPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (footerSwipePointerIdRef.current !== e.pointerId) return
+    const startY = footerSwipeStartYRef.current
+    if (startY == null) return
+    const dy = e.clientY - startY
+    if (dy > 44) {
+      dismissFooterAddMode()
+      footerSwipeStartYRef.current = null
+      footerSwipePointerIdRef.current = null
+    }
+  }
+
+  function clearFooterSheetSwipe() {
+    footerSwipeStartYRef.current = null
+    footerSwipePointerIdRef.current = null
+  }
+
   if (!listId) {
     return <p className="p-4 text-sm text-slate-600">Missing list id.</p>
   }
 
   return (
-    <div className="mx-auto flex min-h-full max-w-lg flex-col scroll-pb-[calc(15rem+env(safe-area-inset-bottom,0px))] px-2 pb-[calc(15rem+env(safe-area-inset-bottom,0px))] pt-2 sm:px-3 sm:pb-[calc(15rem+env(safe-area-inset-bottom,0px))] sm:pt-3">
-      <header className="mb-2 flex flex-col gap-1.5 sm:mb-3 sm:gap-2">
-        {/* Grid keeps back + title + toolbar on one row; flex-wrap was pushing controls off-screen / below fold */}
-        <div className="relative z-40 grid min-h-8 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
-          <Link
-            to="/"
-            className="grid h-8 min-h-8 w-8 min-w-8 shrink-0 place-items-center rounded-[6px] border border-slate-200 text-slate-700 dark:border-slate-600 dark:text-slate-200"
-            aria-label="All lists"
-            title="All lists"
-          >
-            <BackToListsIcon className="h-6 w-6 shrink-0" />
-          </Link>
-          <input
-            className="min-w-0 w-full rounded-[6px] border border-transparent bg-transparent py-1 text-lg font-semibold leading-tight text-slate-900 outline-none focus:border-slate-300 focus:bg-white dark:text-slate-50 dark:focus:border-slate-600 dark:focus:bg-slate-900"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={() => void persistTitle(title)}
-            placeholder="List name"
-            aria-label="List name"
-          />
-          <div ref={actionsMenuRef} className="relative z-50 flex shrink-0 items-center justify-self-end gap-1">
+    <div className="mx-auto flex min-h-full max-w-lg flex-col scroll-pb-[calc(15rem+env(safe-area-inset-bottom,0px))] bg-white px-2 pb-[calc(15rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-3 sm:pb-[calc(15rem+env(safe-area-inset-bottom,0px))]">
+      <div className="sticky top-0 z-40 h-0">
+        <div
+          className="pointer-events-auto -mx-2 h-[130px] bg-[linear-gradient(to_bottom,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.48)_42%,rgba(255,255,255,0)_100%)] backdrop-blur-[24px] [mask-image:linear-gradient(to_bottom,black_0%,black_55%,transparent_100%)] sm:-mx-3"
+          aria-hidden
+        />
+      </div>
+      <header className="sticky top-0 z-50 -mx-2 mb-2 flex flex-col gap-1.5 bg-transparent px-2 pt-2 sm:-mx-3 sm:mb-3 sm:gap-2 sm:px-3 sm:pt-3">
+        <div className="flex min-h-16 items-center justify-between px-2 py-2">
+          <div className="flex min-w-0 items-center gap-3">
+            <Link
+              to="/"
+              className="grid h-10 min-h-10 w-10 min-w-10 shrink-0 place-items-center rounded-full bg-white text-slate-700 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-black/15 active:bg-black/15"
+              aria-label="All lists"
+              title="All lists"
+            >
+              <BackToListsIcon className="h-4 w-4 shrink-0" />
+            </Link>
+            <input
+              className="min-w-0 rounded-[4px] border border-transparent bg-transparent px-1 py-1 text-sm font-medium leading-5 text-slate-600 outline-none focus:border-[#1868DB]"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onBlur={() => void persistTitle(title)}
+              placeholder="Shopping list"
+              aria-label="List name"
+            />
+          </div>
+          <div className="flex items-center rounded-full bg-white p-1 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)]">
+            <button
+              type="button"
+              onClick={toggleMode}
+              className={`flex h-10 items-center gap-2 rounded-full px-3 pr-4 text-sm font-medium text-white shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:brightness-95 active:brightness-95 ${
+                mode === 'plan'
+                  ? 'bg-[linear-gradient(147deg,#00B66F_0%,#005371_100%)]'
+                  : 'bg-[linear-gradient(147deg,#D500F1_0%,#00338C_100%)]'
+              }`}
+              aria-label={mode === 'plan' ? 'Switch to Shop mode' : 'Switch to Plan mode'}
+              title={mode === 'plan' ? 'Switch to Shop mode' : 'Switch to Plan mode'}
+            >
+              {mode === 'plan' ? <ToolbarIconPlan className="h-4 w-4" /> : <ToolbarIconShop className="h-4 w-4" />}
+              {mode === 'plan' ? 'Plan' : 'Shop'}
+            </button>
+            <div className="relative ml-1 h-10 w-10">
+              <label htmlFor="list-settings-action" className="sr-only">
+                List settings
+              </label>
+              <select
+                id="list-settings-action"
+                value={headerAction}
+                onChange={(e) => handleHeaderActionChange(e.target.value)}
+                className="absolute inset-0 z-10 h-10 w-10 cursor-pointer appearance-none rounded-full bg-transparent text-transparent outline-none hover:bg-black/15 active:bg-black/15"
+                aria-label="List settings actions"
+              >
+                <option value="">List settings</option>
+                <option value="aisles">Manage store aisle ordering</option>
+                <option value="stores">Manage stores</option>
+                <option value="invite">Invite collaborator</option>
+              </select>
+              <div className="pointer-events-none grid h-10 w-10 place-items-center rounded-full">
+                <ToolbarIconMore className="h-4 w-4 text-slate-600" />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="flex min-h-10 items-center justify-between px-2 pr-1">
+          {mode === 'shop' ? (
+            <div
+              className="relative h-10 min-w-0 max-w-full flex-1"
+              style={{ width: `${storeSelectorWidthCh}ch`, maxWidth: `${storeSelectorWidthCh}ch` }}
+            >
+              <label htmlFor="list-store-layout" className="sr-only">
+                Store layout
+              </label>
+              <select
+                id="list-store-layout"
+                className="h-10 w-full appearance-none rounded-full border border-slate-900/15 bg-white py-2 pl-3 pr-9 text-sm font-medium text-slate-600 outline-none hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
+                value={list?.store_preset_id ?? ''}
+                onChange={(e) => void persistPreset(e.target.value || null)}
+                aria-label="Store layout"
+              >
+                {presets.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-600" aria-hidden>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                  <path
+                    fillRule="evenodd"
+                    d="M5.23 7.21a.75.75 0 011.06.02L10 11.084l3.71-3.852a.75.75 0 111.08 1.04l-4.24 4.4a.75.75 0 01-1.08 0l-4.24-4.4a.75.75 0 01.02-1.06z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </span>
+            </div>
+          ) : (
+            <span />
+          )}
+          <div className="flex items-center gap-1">
             <button
               type="button"
               disabled={!canUndo}
               onClick={() => void undo().then(() => refreshAll())}
-              className="grid h-8 min-h-8 w-8 min-w-8 place-items-center rounded-[6px] border border-slate-200 text-slate-700 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200"
+              className={`grid h-10 w-10 place-items-center rounded-full bg-white text-slate-600 transition-shadow duration-200 hover:bg-[#F0F1F2] active:bg-[#F0F1F2] ${
+                headerElevated ? 'shadow-[0_4px_12px_rgba(30,31,33,0.18)]' : 'shadow-none'
+              }`}
               aria-label="Undo"
               title="Undo"
             >
-              <ToolbarIconUndo className="h-6 w-6 shrink-0" />
+              <ToolbarIconUndo className={`h-4 w-4 shrink-0 ${canUndo ? '' : 'opacity-40'}`} />
             </button>
             <button
               type="button"
               disabled={!canRedo}
               onClick={() => void redo().then(() => refreshAll())}
-              className="grid h-8 min-h-8 w-8 min-w-8 place-items-center rounded-[6px] border border-slate-200 text-slate-700 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200"
+              className={`grid h-10 w-10 place-items-center rounded-full bg-white text-slate-600 transition-shadow duration-200 hover:bg-[#F0F1F2] active:bg-[#F0F1F2] ${
+                headerElevated ? 'shadow-[0_4px_12px_rgba(30,31,33,0.18)]' : 'shadow-none'
+              }`}
               aria-label="Redo"
               title="Redo"
             >
-              <ToolbarIconRedo className="h-6 w-6 shrink-0" />
+              <ToolbarIconRedo className={`h-4 w-4 shrink-0 ${canRedo ? '' : 'opacity-40'}`} />
             </button>
             <button
               type="button"
-              className="grid h-8 min-h-8 w-8 min-w-8 place-items-center rounded-[6px] border border-slate-200 text-slate-700 dark:border-slate-600 dark:text-slate-200"
-              onClick={() => setActionsOpen((v) => !v)}
-              aria-label="More actions"
-              title="More actions"
+              onClick={toggleView}
+              className={`grid h-10 w-10 place-items-center rounded-full bg-white text-slate-600 transition-shadow duration-200 hover:bg-[#F0F1F2] active:bg-[#F0F1F2] ${
+                headerElevated ? 'shadow-[0_4px_12px_rgba(30,31,33,0.18)]' : 'shadow-none'
+              }`}
+              aria-label={view === 'flat' ? 'Switch to grouped view' : 'Switch to flat view'}
+              title={view === 'flat' ? 'Switch to grouped view' : 'Switch to flat view'}
             >
-              <ToolbarIconMore className="h-6 w-6 shrink-0" />
-            </button>
-            {actionsOpen ? (
-              <div
-                role="menu"
-                className="absolute right-0 top-full z-[100] mt-1 w-52 rounded-[6px] border border-slate-200 bg-white py-0.5 text-[14px] shadow-lg ring-1 ring-black/5 dark:border-slate-700 dark:bg-slate-900 dark:ring-white/10"
-              >
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="flex min-h-10 w-full items-center px-3 text-left text-[14px] text-slate-800 hover:bg-slate-100 active:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
-                  onClick={() => {
-                    setActionsOpen(false)
-                    setCatOpen(true)
-                  }}
-                >
-                  Manage store aisle ordering
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="flex min-h-10 w-full items-center px-3 text-left text-[14px] text-slate-800 hover:bg-slate-100 active:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
-                  onClick={() => {
-                    setActionsOpen(false)
-                    setStoresOpen(true)
-                  }}
-                >
-                  Manage stores
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="flex min-h-10 w-full items-center px-3 text-left text-[14px] text-slate-800 hover:bg-slate-100 active:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
-                  onClick={() => {
-                    setActionsOpen(false)
-                    void createInvite()
-                  }}
-                >
-                  Invite collaborator
-                </button>
-                <div className="border-t border-slate-200 dark:border-slate-700">
-                  <div className="flex min-h-10 items-center justify-between gap-2 px-3 py-0.5">
-                    <span className="min-w-0 flex-1 text-left text-[14px] font-medium text-slate-900 dark:text-slate-100">
-                      Show prices
-                    </span>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={showPrices}
-                      aria-label="Show prices"
-                      onClick={() => setShowPrices((v) => !v)}
-                      className={`relative h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900 ${
-                        showPrices ? 'bg-teal-600' : 'bg-slate-300 dark:bg-slate-600'
-                      }`}
-                    >
-                      <span
-                        className={`pointer-events-none absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${
-                          showPrices ? 'translate-x-5' : 'translate-x-0'
-                        }`}
-                        aria-hidden
-                      />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-h-8 min-w-[calc(11rem+20px)] max-w-full flex-1 sm:max-w-[calc(13.5rem+20px)] sm:flex-initial">
-            <label htmlFor="list-store-layout" className="sr-only">
-              Store layout
-            </label>
-            <select
-              id="list-store-layout"
-              className="min-h-8 w-full appearance-none rounded-[6px] border border-slate-200 bg-white py-1.5 pl-3 pr-9 text-sm font-medium text-slate-900 outline-none focus:border-slate-400 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-500"
-              value={list?.store_preset_id ?? ''}
-              onChange={(e) => void persistPreset(e.target.value || null)}
-              aria-label="Store layout"
-            >
-              {presets.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {showPrices
-                    ? `${p.name} ($${(estimatedRemainingByStorePresetId.get(p.id) ?? 0).toFixed(2)})`
-                    : p.name}
-                </option>
-              ))}
-            </select>
-            <span
-              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400"
-              aria-hidden
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-                <path
-                  fillRule="evenodd"
-                  d="M5.23 7.21a.75.75 0 011.06.02L10 11.084l3.71-3.852a.75.75 0 111.08 1.04l-4.24 4.4a.75.75 0 01-1.08 0l-4.24-4.4a.75.75 0 01.02-1.06z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </span>
-          </div>
-          <div className="flex rounded-[6px] border border-slate-200 p-0.5 text-xs dark:border-slate-600">
-            <button
-              type="button"
-              className={`flex min-h-8 items-center rounded-[6px] px-3 ${view === 'flat' ? 'bg-teal-700 text-white' : ''}`}
-              onClick={() => setView('flat')}
-            >
-              Flat
-            </button>
-            <button
-              type="button"
-              className={`flex min-h-8 items-center rounded-[6px] px-3 ${view === 'grouped' ? 'bg-teal-700 text-white' : ''}`}
-              onClick={() => setView('grouped')}
-            >
-              Grouped
+              {view === 'flat' ? (
+                <ToolbarIconViewFlat className="h-4 w-4 shrink-0" />
+              ) : (
+                <ToolbarIconViewGrouped className="h-4 w-4 shrink-0" />
+              )}
             </button>
           </div>
-          <button
-            type="button"
-            className="grid h-8 min-h-8 w-8 min-w-8 place-items-center rounded-[6px] border border-slate-200 text-slate-700 dark:border-slate-600 dark:text-slate-200"
-            onClick={() => setRecOpen(true)}
-            aria-label="Recommended"
-            title="Recommended"
-          >
-            <ToolbarIconRecommended className="h-6 w-6 shrink-0" />
-          </button>
         </div>
         {inviteUrl && (
           <p className="rounded-lg bg-teal-50 px-2 py-1 text-xs text-teal-900 dark:bg-teal-950 dark:text-teal-100">
@@ -1394,6 +1522,7 @@ export function ListPage() {
                   <SortableItem
                     key={item.id}
                     item={item}
+                    showDragHandle={mode === 'plan'}
                     showPrices={showPrices}
                     isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
                     estimatedLineCost={pricing.items[item.id]?.estimatedCost ?? 0}
@@ -1412,16 +1541,16 @@ export function ListPage() {
               </ul>
             </SortableContext>
           </section>
-          <section className="mt-6">
+          <section className="mt-8 border-t border-slate-200 pt-4 dark:border-slate-800">
             <div className="mb-2 flex items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-slate-500">Completed</h2>
               <button
                 type="button"
-                className="min-h-8 rounded-[6px] border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 active:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:active:bg-slate-800 disabled:opacity-40"
+                className="min-h-8 rounded-[99px] border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:bg-slate-100 active:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:active:bg-slate-800 disabled:opacity-40"
                 onClick={() => void deleteCompletedItems()}
                 disabled={!completedSorted.length}
               >
-                Delete completed items
+                Delete items
               </button>
             </div>
             <SortableContext items={completedSorted.map((i) => i.id)} strategy={verticalListSortingStrategy}>
@@ -1430,6 +1559,7 @@ export function ListPage() {
                   <SortableItem
                     key={item.id}
                     item={item}
+                    showDragHandle={mode === 'plan'}
                     showPrices={showPrices}
                     isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
                     estimatedLineCost={pricing.items[item.id]?.estimatedCost ?? 0}
@@ -1460,10 +1590,10 @@ export function ListPage() {
                     <div className="flex items-center justify-between gap-2 py-0.5">
                       <button
                         type="button"
-                        className={`flex min-h-8 items-center gap-1 rounded-[6px] pl-2 pr-2 text-slate-600 dark:text-slate-400 ${
+                        className={`-ml-[7px] flex h-6 items-center gap-3 rounded-full pl-1.5 pr-4 text-[12px] font-medium leading-4 text-[#505258] ${
                           collapsed
-                            ? 'bg-slate-100 hover:bg-slate-200 active:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 dark:active:bg-slate-700'
-                            : 'hover:bg-slate-100 active:bg-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800'
+                            ? 'bg-[rgba(5,12,24,0.06)] hover:bg-[rgba(11,18,14,0.14)] active:bg-[rgba(11,18,14,0.14)]'
+                            : 'bg-transparent hover:bg-[rgba(5,12,24,0.06)] active:bg-[rgba(5,12,24,0.06)]'
                         }`}
                         aria-expanded={!collapsed}
                         aria-label={
@@ -1476,12 +1606,18 @@ export function ListPage() {
                           }))
                         }
                       >
-                        {collapsed ? (
-                          <GroupCollapseChevronIcon className="h-6 w-6 shrink-0" />
-                        ) : (
-                          <GroupExpandChevronIcon className="h-6 w-6 shrink-0" />
-                        )}
-                        <span className="text-xs font-semibold">{headingForCategoryKey(key)}</span>
+                        <span className="grid h-5 w-5 shrink-0 place-items-center" aria-hidden>
+                          {collapsed ? (
+                            <svg width="7" height="10" viewBox="0 0 7 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M-4.29498e-07 1.00193L-9.50382e-08 8.65349C-5.76932e-08 9.50785 1.00212 9.96875 1.65079 9.41275L6.1142 5.58697C6.57981 5.18787 6.57981 4.46755 6.1142 4.06846L1.65079 0.242677C1.00212 -0.313329 -4.66843e-07 0.14758 -4.29498e-07 1.00193Z" fill="#505258" />
+                            </svg>
+                          ) : (
+                            <svg width="10" height="7" viewBox="0 0 10 7" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M8.65354 0H1.00198C0.147626 0 -0.313283 1.00212 0.242723 1.65079L4.0685 6.1142C4.4676 6.57981 5.18792 6.57981 5.58702 6.1142L9.4128 1.65079C9.9688 1.00212 9.50789 0 8.65354 0Z" fill="#505258" />
+                            </svg>
+                          )}
+                        </span>
+                        <span>{headingForCategoryKey(key)}</span>
                       </button>
                       <span className="min-w-8" aria-hidden />
                     </div>
@@ -1490,7 +1626,7 @@ export function ListPage() {
                         collapsed ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
                       }`}
                     >
-                      <ul className="min-h-0 flex flex-col gap-0 divide-y divide-slate-100 overflow-hidden rounded-[6px] bg-white dark:divide-slate-800 dark:bg-slate-900">
+                      <ul className="min-h-0 flex flex-col gap-1.5 overflow-hidden rounded-[6px] bg-white dark:bg-slate-900 sm:gap-2">
                         {rows.map((item) => (
                           <SortableItem
                             key={item.id}
@@ -1518,21 +1654,21 @@ export function ListPage() {
                 )
               })}
             </SortableContext>
-            <section>
+            <section className="mt-8 border-t border-slate-200 pt-4 dark:border-slate-800">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold text-slate-500">Completed</h2>
                 <button
                   type="button"
-                  className="min-h-8 rounded-[6px] border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 active:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:active:bg-slate-800 disabled:opacity-40"
+                  className="min-h-8 rounded-[99px] border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:bg-slate-100 active:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:active:bg-slate-800 disabled:opacity-40"
                   onClick={() => void deleteCompletedItems()}
                   disabled={!completedSorted.length}
                 >
-                  Delete completed items
+                  Delete items
                 </button>
               </div>
               {completedSorted.length ? (
                 <SortableContext items={completedSorted.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-                  <ul className="flex flex-col gap-0 divide-y divide-slate-100 overflow-hidden rounded-[6px] bg-white dark:divide-slate-800 dark:bg-slate-900">
+                  <ul className="flex flex-col gap-1.5 overflow-hidden rounded-[6px] bg-white dark:bg-slate-900 sm:gap-2">
                     {completedSorted.map((item) => (
                       <SortableItem
                         key={item.id}
@@ -1561,90 +1697,144 @@ export function ListPage() {
         </DndContext>
       )}
 
-      <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-slate-200 bg-white/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 sm:px-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:pt-3">
-        <div className="mx-auto flex max-w-lg flex-col gap-1.5 sm:gap-2">
-          <div className="flex gap-1.5 sm:gap-2">
-            <input
-              className="min-h-8 flex-1 rounded-[6px] border border-slate-200 bg-white px-3 py-2 text-base dark:border-slate-600 dark:bg-slate-950"
-              placeholder="Add item"
-              value={newText}
-              onChange={(e) => setNewText(e.target.value)}
-            />
-            {newUnit === 'each' ? (
-              <select
-                className="box-border min-h-8 w-[40px] min-w-[40px] max-w-[40px] shrink-0 appearance-none rounded-[6px] border border-slate-200 bg-white bg-[length:0] px-1 text-center text-sm tabular-nums [text-align-last:center] [background-image:none] dark:border-slate-600 dark:bg-slate-950 [&::-webkit-appearance]:none"
-                value={Math.min(20, Math.max(1, Math.round(Number(newQty)) || 1))}
-                onChange={(e) => {
-                  const v = Number(e.target.value)
-                  setNewQty(v)
-                  setNewQtyText(String(v))
-                }}
-                aria-label="Quantity"
-              >
-                {ADD_EACH_QTY_OPTIONS.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
+      <div className="fixed bottom-0 left-0 right-0 z-20 bg-transparent px-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2 sm:px-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:pt-3">
+        <div className="mx-auto max-w-lg">
+          {!footerExpanded ? (
+            mode === 'plan' ? (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="flex h-12 min-w-0 flex-1 items-center rounded-full bg-white px-3 text-left text-sm font-normal text-slate-500 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
+                  onClick={openFooterAddMode}
+                >
+                  Add item
+                </button>
+                <button
+                  type="button"
+                  className="flex h-12 items-center gap-2 rounded-full bg-white px-3 text-sm font-medium text-slate-700 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
+                  onClick={() => setRecipeUrlOpen(true)}
+                >
+                  <span aria-hidden>🔗</span>
+                  From URL
+                </button>
+                <button
+                  type="button"
+                  className="grid h-12 w-12 place-items-center rounded-full bg-white text-slate-700 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
+                  onClick={() => setRecOpen(true)}
+                  aria-label="Recommendations"
+                >
+                  ★
+                </button>
+              </div>
             ) : (
-              <input
-                type="text"
-                inputMode="decimal"
-                className="box-border min-h-8 w-[40px] min-w-[40px] max-w-[40px] shrink-0 rounded-[6px] border border-slate-200 bg-white px-1 py-2 text-center text-sm tabular-nums [text-align-last:center] dark:border-slate-600 dark:bg-slate-950"
-                value={newQtyText}
-                onChange={(e) => setNewQtyText(e.target.value)}
-                onBlur={() => {
-                  const p = parseQuantityInput(newUnit, newQtyText)
-                  if (p !== null) {
-                    setNewQty(p)
-                    setNewQtyText(formatQuantityForInput(newUnit, p))
-                  } else {
-                    setNewQtyText(formatQuantityForInput(newUnit, newQty))
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                }}
-                aria-label="Quantity"
-              />
-            )}
-            <select
-              className="min-h-8 w-28 appearance-none rounded-[6px] border border-slate-200 bg-white bg-[length:0] px-1 text-sm [background-image:none] dark:border-slate-600 dark:bg-slate-950 [&::-webkit-appearance]:none"
-              value={normalizeUnit(newUnit)}
-              onChange={(e) => {
-                const u = normalizeUnit(e.target.value)
-                const bridged = quantityWhenChangingUnit(newUnit, u, newQty)
-                setNewUnit(u)
-                setNewQty(bridged)
-                setNewQtyText(formatQuantityForInput(u, bridged))
-              }}
+              <div className="flex items-center justify-end">
+                <button
+                  type="button"
+                  className="grid h-12 w-12 place-items-center rounded-full bg-white text-slate-700 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
+                  onClick={openFooterAddMode}
+                  aria-label="Add item"
+                >
+                  +
+                </button>
+              </div>
+            )
+          ) : (
+            <div
+              className={`rounded-t-xl bg-white px-3 py-3 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] transition-all duration-200 ease-out dark:bg-slate-900 ${
+                footerClosing ? 'translate-y-8 opacity-0' : 'translate-y-0 opacity-100'
+              }`}
+              onPointerDown={handleFooterSheetPointerDown}
+              onPointerMove={handleFooterSheetPointerMove}
+              onPointerUp={clearFooterSheetSwipe}
+              onPointerCancel={clearFooterSheetSwipe}
             >
-              {UNIT_OPTIONS.map((u) => (
-                <option key={u} value={u}>
-                  {unitOptionLabel(u)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex gap-1.5 sm:gap-2">
-            <button
-              type="button"
-              className="min-h-10 shrink-0 rounded-[6px] bg-slate-200 px-3 text-sm font-medium text-slate-800 dark:bg-slate-600 dark:text-slate-100"
-              onClick={() => setRecipeUrlOpen(true)}
-            >
-              Add URL
-            </button>
-            <button
-              type="button"
-              className="min-h-10 min-w-0 flex-1 rounded-[6px] bg-teal-700 py-3 text-sm font-semibold text-white"
-              onClick={() => void addItem()}
-            >
-              Add to list
-            </button>
-          </div>
+              <div className="flex items-center gap-2">
+                <input
+                  ref={addItemInputRef}
+                  className="h-12 min-w-0 flex-1 rounded-full border-2 border-[#1868DB] bg-white px-3 text-base text-slate-700 outline-none dark:bg-slate-950"
+                  placeholder="Add item"
+                  value={newText}
+                  onChange={(e) => setNewText(e.target.value)}
+                />
+                <div className="flex h-12 items-center rounded-full bg-white p-1 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)]">
+                  {newUnit === 'each' ? (
+                    <select
+                      className="h-10 min-w-[40px] appearance-none rounded-full border-0 bg-white px-2 text-sm font-medium text-slate-700"
+                      value={Math.min(20, Math.max(1, Math.round(Number(newQty)) || 1))}
+                      onChange={(e) => {
+                        const v = Number(e.target.value)
+                        setQtyTouched(true)
+                        setNewQty(v)
+                        setNewQtyText(String(v))
+                      }}
+                      aria-label="Quantity"
+                    >
+                      {ADD_EACH_QTY_OPTIONS.map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      className="h-10 w-[56px] rounded-full border-0 bg-white px-2 text-center text-sm font-medium text-slate-700 outline-none"
+                      value={newQtyText}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        setQtyTouched(true)
+                        setNewQtyText(e.target.value)
+                      }}
+                      onBlur={() => {
+                        const p = parseQuantityInput(newUnit, newQtyText)
+                        if (p !== null) {
+                          setNewQty(p)
+                          setNewQtyText(formatQuantityForInput(newUnit, p))
+                        } else {
+                          setNewQtyText(formatQuantityForInput(newUnit, newQty))
+                        }
+                      }}
+                      aria-label="Quantity"
+                    />
+                  )}
+                  <select
+                    className="h-10 min-w-[44px] appearance-none rounded-full border-0 bg-white px-2 text-center text-sm font-medium text-slate-700 [text-align-last:center]"
+                    value={normalizeUnit(newUnit)}
+                    onChange={(e) => {
+                      const u = normalizeUnit(e.target.value)
+                      const bridged = quantityWhenChangingUnit(newUnit, u, newQty)
+                      setUnitTouched(true)
+                      setNewUnit(u)
+                      setNewQty(bridged)
+                      setNewQtyText(formatQuantityForInput(u, bridged))
+                    }}
+                    aria-label="Quantity type"
+                  >
+                    {UNIT_OPTIONS.map((u) => (
+                      <option key={u} value={u}>
+                        {u === 'each' ? 'ea' : unitOptionLabel(u)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <button
+                type="button"
+                className={`mt-2 h-12 w-full rounded-full text-sm font-semibold text-white ${
+                  newText.trim()
+                    ? 'bg-[linear-gradient(147deg,#00B66F_0%,#005371_100%)]'
+                    : 'bg-slate-300'
+                }`}
+                onClick={() => void addItem()}
+                disabled={!newText.trim()}
+              >
+                Add item
+              </button>
+            </div>
+          )}
           {showPrices ? (
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
               Total estimated cost: ${pricing.totalEstimatedCost.toFixed(2)}
               <span aria-hidden="true"> | </span>
               Remaining cost: ${remainingEstimatedCost.toFixed(2)}
