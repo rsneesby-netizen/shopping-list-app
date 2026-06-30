@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthPage } from './features/auth/AuthPage'
 import { InvitePage } from './features/invite/InvitePage'
 import { ListPage } from './features/list/ListPage'
+import { NewListPage } from './features/list/NewListPage'
 import { ListsHomePage } from './features/lists/ListsHomePage'
 import { getSupabase } from './lib/supabase'
 
@@ -42,6 +43,7 @@ function ConfigMissing() {
 
 function AuthedApp() {
   const session = useSession()
+  const useNewUI = import.meta.env.VITE_ENABLE_NEW_UI === 'true'
 
   if (session === undefined) {
     return (
@@ -64,7 +66,7 @@ function AuthedApp() {
   return (
     <Routes>
       <Route path="/" element={<ListsHomePage />} />
-      <Route path="/lists/:listId" element={<ListPage />} />
+      <Route path="/lists/:listId" element={useNewUI ? <NewListPage /> : <ListPage />} />
       <Route path="/invite/:token" element={<InvitePage />} />
       <Route path="/login" element={<Navigate to="/" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />

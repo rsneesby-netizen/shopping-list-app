@@ -1,5 +1,4 @@
-import { createPortal } from 'react-dom'
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
@@ -14,10 +13,12 @@ import { ItemDeleteIcon } from './listIcons'
 import { ToolbarIconMore } from './toolbarIcons'
 
 const EACH_QUANTITY_OPTIONS = Array.from({ length: 20 }, (_, i) => i + 1)
+const SWIPE_DELETE_THRESHOLD_PX = 72
+const SWIPE_DELETE_MAX_PX = 78
 
 /** 32×32 quantity control, subtle border at rest */
 const qtyBoxClass =
-  'box-border h-8 w-[40px] min-w-[40px] max-w-[40px] shrink-0 rounded border border-slate-200/80 bg-white px-1 text-center text-xs tabular-nums text-slate-700 [text-align-last:center] outline-none focus:border-slate-400 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-500'
+  'box-border h-8 w-[48px] min-w-[48px] max-w-[48px] shrink-0 rounded-l-[8px] rounded-r-none border border-r-0 border-slate-200/80 bg-white pl-0 pr-2 py-1.5 text-right text-sm font-medium tabular-nums text-[#505258] outline-none focus:border-slate-400 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-500'
 
 const noChevron =
   'appearance-none bg-[length:0] [background-image:none] [&::-webkit-appearance]:none'
@@ -85,7 +86,9 @@ export function SortableItem({
   const unit = normalizeUnit(item.unit)
   const isEach = unit === 'each'
   const overflowMenu = itemMenuVariant === 'overflow'
-  const sortableLocked = !!(disabled || disableDrag)
+  const [swipeOffset, setSwipeOffset] = useState(0)
+  const [isSwiping, setIsSwiping] = useState(false)
+  const sortableLocked = !!(disabled || disableDrag || isSwiping)
   const rowDrag = dragFromRow && !sortableLocked
   const blockDragFromControl = rowDrag
     ? (e: ReactPointerEvent<HTMLElement>) => {
@@ -95,33 +98,13 @@ export function SortableItem({
 
   const [qtyText, setQtyText] = useState(() => formatQuantityForInput(unit, item.quantity))
   const [textDraft, setTextDraft] = useState(() => item.text)
-  const [rowMenuOpen, setRowMenuOpen] = useState(false)
-  const [rowMenuPlacement, setRowMenuPlacement] = useState<{ top: number; right: number } | null>(null)
+  const [rowAction, setRowAction] = useState('')
   const [nameFieldActive, setNameFieldActive] = useState(false)
 
   const nameInputRef = useRef<HTMLInputElement>(null)
-  const rowMenuRef = useRef<HTMLDivElement>(null)
-  const rowMenuButtonRef = useRef<HTMLButtonElement>(null)
-
-  useLayoutEffect(() => {
-    if (!rowMenuOpen || !overflowMenu) {
-      setRowMenuPlacement(null)
-      return
-    }
-    function updatePlacement() {
-      const btn = rowMenuButtonRef.current
-      if (!btn) return
-      const r = btn.getBoundingClientRect()
-      setRowMenuPlacement({ top: r.bottom + 4, right: window.innerWidth - r.right })
-    }
-    updatePlacement()
-    window.addEventListener('scroll', updatePlacement, true)
-    window.addEventListener('resize', updatePlacement)
-    return () => {
-      window.removeEventListener('scroll', updatePlacement, true)
-      window.removeEventListener('resize', updatePlacement)
-    }
-  }, [rowMenuOpen, overflowMenu])
+  const swipePointerIdRef = useRef<number | null>(null)
+  const swipeStartXRef = useRef(0)
+  const swipeStartYRef = useRef(0)
 
   useEffect(() => {
     setQtyText(formatQuantityForInput(unit, item.quantity))
@@ -131,17 +114,6 @@ export function SortableItem({
     setTextDraft(item.text)
   }, [item.id, item.text])
 
-  useEffect(() => {
-    if (!rowMenuOpen) return
-    function onDocPointerDown(e: PointerEvent) {
-      const t = e.target as Node
-      if (rowMenuRef.current?.contains(t)) return
-      if (rowMenuButtonRef.current?.contains(t)) return
-      setRowMenuOpen(false)
-    }
-    document.addEventListener('pointerdown', onDocPointerDown, true)
-    return () => document.removeEventListener('pointerdown', onDocPointerDown, true)
-  }, [rowMenuOpen])
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.id,
@@ -187,7 +159,7 @@ export function SortableItem({
   }
 
   function beginEditNameFromMenu() {
-    setRowMenuOpen(false)
+    setRowAction('')
     setNameFieldActive(true)
     requestAnimationFrame(() => {
       const el = nameInputRef.current
@@ -197,12 +169,20 @@ export function SortableItem({
     })
   }
 
+  function handleRowActionChange(value: string) {
+    if (!value) return
+    if (value === 'delete') onDelete(item.id)
+    if (value === 'category' && onChangeCategory) onChangeCategory(item.id)
+    if (value === 'edit' && onTextChange) beginEditNameFromMenu()
+    setRowAction('')
+  }
+
   const unitSelectClass =
-    `${noChevron} shrink-0 cursor-pointer border-0 bg-transparent p-0 text-[10px] leading-tight text-slate-500 outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 dark:text-slate-400`
+    `${noChevron} h-8 w-[48px] min-w-[48px] max-w-[48px] shrink-0 cursor-pointer rounded-l-none rounded-r-[8px] border border-slate-200/80 bg-white px-2 py-1.5 text-left text-sm font-medium leading-5 text-[#505258] outline-none ring-0 focus:border-slate-400 focus:outline-none focus:ring-0 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-500`
 
   const nameLocked = overflowMenu && onTextChange && !nameFieldActive
-  const nameTextClass = `min-w-0 flex-1 border-0 bg-transparent p-0 text-left text-sm outline-none ring-0 focus:ring-0 disabled:opacity-50 ${
-    item.checked ? 'text-slate-400 line-through' : 'text-slate-900 dark:text-slate-50'
+  const nameTextClass = `min-w-0 flex-1 rounded-[4px] border border-transparent bg-transparent px-1 py-1 text-left text-sm font-medium leading-5 outline-none focus:border-[#1868DB] disabled:opacity-50 ${
+    item.checked ? 'text-slate-400 line-through' : 'text-slate-600 dark:text-slate-50'
   }`
 
   const dndRowListeners = rowDrag
@@ -216,6 +196,65 @@ export function SortableItem({
       }
     : { onPointerDown: handlePointerDown }
 
+  function finishSwipe() {
+    swipePointerIdRef.current = null
+    setIsSwiping(false)
+    setSwipeOffset(0)
+  }
+
+  function handleSwipePointerDown(e: ReactPointerEvent<HTMLLIElement>) {
+    if (disabled || isDragging) return
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    if (e.pointerType !== 'touch' && e.pointerType !== 'mouse') return
+    const target = e.target as HTMLElement
+    if (target.closest('button, input, select, a')) return
+    swipePointerIdRef.current = e.pointerId
+    swipeStartXRef.current = e.clientX
+    swipeStartYRef.current = e.clientY
+    setSwipeOffset(0)
+  }
+
+  function handleSwipePointerMove(e: ReactPointerEvent<HTMLLIElement>) {
+    if (swipePointerIdRef.current !== e.pointerId) return
+    if (e.pointerType === 'mouse' && (e.buttons & 1) === 0) return
+    if (isDragging) {
+      finishSwipe()
+      return
+    }
+    const dx = e.clientX - swipeStartXRef.current
+    const dy = Math.abs(e.clientY - swipeStartYRef.current)
+    if (!isSwiping) {
+      if (dy > 18 && Math.abs(dx) < dy) {
+        finishSwipe()
+        return
+      }
+      // Claim left-swipe intent early so DnD doesn't activate first.
+      if (dx >= -2 || Math.abs(dx) <= dy + 1) return
+      setIsSwiping(true)
+    }
+    if (dy > 18 && Math.abs(dx) < dy) {
+      finishSwipe()
+      return
+    }
+    const next = Math.max(-SWIPE_DELETE_MAX_PX, Math.min(0, dx))
+    setSwipeOffset(next)
+    if (next <= -SWIPE_DELETE_THRESHOLD_PX) {
+      finishSwipe()
+      onDelete(item.id)
+    }
+  }
+
+  function handleTrackpadWheel(e: ReactWheelEvent<HTMLLIElement>) {
+    if (disabled || isDragging) return
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return
+    const next = Math.max(-SWIPE_DELETE_MAX_PX, Math.min(0, swipeOffset - e.deltaX))
+    setSwipeOffset(next)
+    if (next <= -SWIPE_DELETE_THRESHOLD_PX) {
+      setSwipeOffset(0)
+      onDelete(item.id)
+    }
+  }
+
   return (
     <li
       ref={setNodeRef}
@@ -225,6 +264,11 @@ export function SortableItem({
       onPointerUp={clearLongPress}
       onPointerLeave={clearLongPress}
       onPointerCancel={clearLongPress}
+      onPointerDownCapture={handleSwipePointerDown}
+      onPointerMove={handleSwipePointerMove}
+      onPointerUpCapture={() => finishSwipe()}
+      onPointerCancelCapture={() => finishSwipe()}
+      onWheel={handleTrackpadWheel}
       onContextMenu={!overflowMenu && enableLongPressCategoryChange ? (e) => e.preventDefault() : undefined}
       onClickCapture={(e) => {
         if (!longPressTriggeredRef.current) return
@@ -234,25 +278,49 @@ export function SortableItem({
       }}
       className={
         (inGroupedBlock
-          ? 'relative flex items-center gap-1.5 rounded-none bg-transparent px-2 py-1.5 sm:gap-2 sm:px-3 sm:py-2 dark:bg-transparent'
-          : 'relative flex items-center gap-1.5 rounded-[6px] bg-white px-2 py-1.5 sm:gap-2 sm:px-3 sm:py-2 dark:bg-slate-900') +
+          ? 'relative overflow-hidden rounded-none bg-transparent dark:bg-transparent'
+          : 'relative overflow-hidden rounded-[8px] bg-white dark:bg-slate-900') +
         (rowDrag ? ' touch-none cursor-grab active:cursor-grabbing' : '')
       }
     >
-      {showPrices && isOnSpecial ? <span className="absolute inset-y-0 left-0 w-0.5 bg-amber-300" aria-hidden /> : null}
-      {showDragHandle ? (
-        <button
-          type="button"
-          className={`grid min-h-8 min-w-8 place-items-center rounded-[6px] p-1 text-slate-400 hover:bg-slate-100 active:bg-slate-100 disabled:opacity-30 dark:hover:bg-slate-800 dark:active:bg-slate-800 ${rowDrag ? '' : 'touch-none'}`}
-          aria-label="Drag to reorder"
-          disabled={sortableLocked}
-          {...(!rowDrag ? attributes : {})}
-          {...(!rowDrag ? listeners : {})}
-        >
-          <span className="text-lg leading-none">⋮⋮</span>
-        </button>
+      {swipeOffset < 0 ? (
+        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center">
+          <button
+            type="button"
+            className="pointer-events-auto h-8 rounded-[8px] bg-[#AE2E24] px-3 text-sm font-medium text-white"
+            onPointerDown={blockDragFromControl}
+            onClick={() => onDelete(item.id)}
+            aria-label={`Remove ${item.text}`}
+          >
+            Remove
+          </button>
+        </div>
       ) : null}
-      <div className="flex min-w-0 flex-1 items-center gap-3">
+      <div
+        className="relative z-10 flex h-8 items-center gap-[9px] bg-white transition-transform duration-75 dark:bg-slate-900"
+        style={{ transform: `translateX(${swipeOffset}px)` }}
+      >
+        {showPrices && isOnSpecial ? <span className="absolute inset-y-0 left-0 w-0.5 bg-amber-300" aria-hidden /> : null}
+        {showDragHandle ? (
+          <button
+            type="button"
+            className={`grid h-8 w-4 place-items-center rounded-[6px] p-0 text-slate-400 hover:bg-slate-100 active:bg-slate-100 disabled:opacity-30 dark:hover:bg-slate-800 dark:active:bg-slate-800 ${rowDrag ? '' : 'touch-none'}`}
+            aria-label="Drag to reorder"
+            disabled={sortableLocked}
+            {...(!rowDrag ? attributes : {})}
+            {...(!rowDrag ? listeners : {})}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+              <path d="M5.25 2.0625C5.25 2.78737 4.66237 3.375 3.9375 3.375C3.21263 3.375 2.625 2.78737 2.625 2.0625C2.625 1.33763 3.21263 0.75 3.9375 0.75C4.66237 0.75 5.25 1.33763 5.25 2.0625Z" fill="#080F21" fillOpacity="0.29" />
+              <path d="M9.375 2.0625C9.375 2.78737 8.78737 3.375 8.0625 3.375C7.33763 3.375 6.75 2.78737 6.75 2.0625C6.75 1.33763 7.33763 0.75 8.0625 0.75C8.78737 0.75 9.375 1.33763 9.375 2.0625Z" fill="#080F21" fillOpacity="0.29" />
+              <path d="M5.25 6C5.25 6.72487 4.66237 7.3125 3.9375 7.3125C3.21263 7.3125 2.625 6.72487 2.625 6C2.625 5.27513 3.21263 4.6875 3.9375 4.6875C4.66237 4.6875 5.25 5.27513 5.25 6Z" fill="#080F21" fillOpacity="0.29" />
+              <path d="M9.375 6C9.375 6.72487 8.78737 7.3125 8.0625 7.3125C7.33763 7.3125 6.75 6.72487 6.75 6C6.75 5.27513 7.33763 4.6875 8.0625 4.6875C8.78737 4.6875 9.375 5.27513 9.375 6Z" fill="#080F21" fillOpacity="0.29" />
+              <path d="M5.25 9.9375C5.25 10.6624 4.66237 11.25 3.9375 11.25C3.21263 11.25 2.625 10.6624 2.625 9.9375C2.625 9.21263 3.21263 8.625 3.9375 8.625C4.66237 8.625 5.25 9.21263 5.25 9.9375Z" fill="#080F21" fillOpacity="0.29" />
+              <path d="M9.375 9.9375C9.375 10.6624 8.78737 11.25 8.0625 11.25C7.33763 11.25 6.75 10.6624 6.75 9.9375C6.75 9.21263 7.33763 8.625 8.0625 8.625C8.78737 8.625 9.375 9.21263 9.375 9.9375Z" fill="#080F21" fillOpacity="0.29" />
+            </svg>
+          </button>
+        ) : null}
+        <div className="flex min-w-0 flex-1 items-center gap-[10px]">
         <input
           type="checkbox"
           disabled={disabled}
@@ -261,38 +329,44 @@ export function SortableItem({
           onChange={(e) => onToggle(item.id, e.target.checked)}
           className="grocery-checkbox shrink-0"
         />
-        <input
-          ref={nameInputRef}
-          type="text"
-          disabled={disabled}
-          readOnly={!!nameLocked}
-          tabIndex={nameLocked ? -1 : 0}
-          className={nameTextClass}
-          value={textDraft}
-          onChange={(e) => setTextDraft(e.target.value)}
-          onPointerDown={(e) => {
-            blockDragFromControl?.(e)
-            if (nameLocked) e.preventDefault()
-          }}
-          onFocus={(e) => {
-            if (!nameLocked) e.target.select()
-          }}
-          onBlur={() => {
-            const t = textDraft.trim()
-            if (!t) {
-              setTextDraft(item.text)
+        {nameLocked ? (
+          <span className={`${nameTextClass} cursor-grab select-none`}>
+            {textDraft}
+          </span>
+        ) : (
+          <input
+            ref={nameInputRef}
+            type="text"
+            disabled={disabled}
+            readOnly={false}
+            tabIndex={0}
+            className={nameTextClass}
+            value={textDraft}
+            onChange={(e) => setTextDraft(e.target.value)}
+            onPointerDown={(e) => {
+              blockDragFromControl?.(e)
+            }}
+            onFocus={(e) => {
+              setNameFieldActive(true)
+              e.target.select()
+            }}
+            onBlur={() => {
+              const t = textDraft.trim()
+              if (!t) {
+                setTextDraft(item.text)
+                setNameFieldActive(false)
+                return
+              }
+              if (t !== item.text && onTextChange) void onTextChange(item.id, t)
+              else setTextDraft(item.text)
               setNameFieldActive(false)
-              return
-            }
-            if (t !== item.text && onTextChange) void onTextChange(item.id, t)
-            else setTextDraft(item.text)
-            setNameFieldActive(false)
-          }}
-          onClick={(e) => e.stopPropagation()}
-          aria-label="Item name"
-        />
-      </div>
-      <div className="flex items-center gap-1">
+            }}
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Item name"
+          />
+        )}
+        </div>
+        <div className="flex items-center gap-0">
         {isEach ? (
           <select
             disabled={disabled}
@@ -316,6 +390,7 @@ export function SortableItem({
             value={qtyText}
             onPointerDown={blockDragFromControl}
             onChange={(e) => setQtyText(e.target.value)}
+            onFocus={(e) => e.target.select()}
             onBlur={() => commitQtyText()}
             onKeyDown={(e) => {
               if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
@@ -334,12 +409,12 @@ export function SortableItem({
         >
           {UNIT_OPTIONS.map((u) => (
             <option key={u} value={u}>
-              {unitOptionLabel(u)}
+              {u === 'each' ? 'ea' : unitOptionLabel(u)}
             </option>
           ))}
         </select>
-      </div>
-      {showPrices && onOpenYourPrice != null && estimatedLineCost != null ? (
+        </div>
+        {showPrices && onOpenYourPrice != null && estimatedLineCost != null ? (
         <button
           type="button"
           className={`min-w-[3.25rem] shrink-0 rounded-[6px] px-1 py-1 text-right text-[11px] tabular-nums outline-none ring-teal-600 hover:bg-slate-100 focus-visible:ring-2 active:bg-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800 ${
@@ -356,85 +431,37 @@ export function SortableItem({
         >
           ${estimatedLineCost.toFixed(2)}
         </button>
-      ) : null}
-      {overflowMenu ? (
-        <div className="relative shrink-0">
-          <button
-            ref={rowMenuButtonRef}
-            type="button"
-            className="grid min-h-8 min-w-8 place-items-center text-[#505258] hover:bg-slate-100 active:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 dark:active:bg-slate-800"
-            aria-haspopup="menu"
-            aria-expanded={rowMenuOpen}
+        ) : null}
+        {overflowMenu && !item.checked ? (
+        <div className="-ml-[9px] relative h-8 w-8 shrink-0">
+          <select
+            value={rowAction}
+            onChange={(e) => handleRowActionChange(e.target.value)}
+            className="absolute inset-0 z-10 h-8 w-8 cursor-pointer appearance-none rounded-[8px] bg-transparent text-transparent outline-none hover:bg-[#050C1810] active:bg-[#050C1810]"
             aria-label={`Actions for ${item.text}`}
             onPointerDown={blockDragFromControl}
-            onClick={() => setRowMenuOpen((o) => !o)}
           >
-            <ToolbarIconMore className="h-5 w-5 shrink-0 sm:h-6 sm:w-6" />
-          </button>
-          {rowMenuOpen && rowMenuPlacement && typeof document !== 'undefined'
-            ? createPortal(
-                <div
-                  ref={rowMenuRef}
-                  role="menu"
-                  style={{
-                    position: 'fixed',
-                    top: rowMenuPlacement.top,
-                    right: rowMenuPlacement.right,
-                    zIndex: 9999,
-                  }}
-                  className="w-52 rounded-[6px] border border-slate-200 bg-white py-0.5 text-[14px] shadow-lg ring-1 ring-black/5 dark:border-slate-700 dark:bg-slate-900 dark:ring-white/10"
-                >
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="flex min-h-10 w-full items-center px-3 text-left text-[14px] text-slate-800 hover:bg-slate-100 active:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
-                    onClick={() => {
-                      setRowMenuOpen(false)
-                      onDelete(item.id)
-                    }}
-                  >
-                    Delete
-                  </button>
-                  {onChangeCategory ? (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className="flex min-h-10 w-full items-center px-3 text-left text-[14px] text-slate-800 hover:bg-slate-100 active:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
-                      onClick={() => {
-                        setRowMenuOpen(false)
-                        onChangeCategory(item.id)
-                      }}
-                    >
-                      Change category
-                    </button>
-                  ) : null}
-                  {onTextChange ? (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className="flex min-h-10 w-full items-center px-3 text-left text-[14px] text-slate-800 hover:bg-slate-100 active:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
-                      onClick={() => beginEditNameFromMenu()}
-                    >
-                      Edit name
-                    </button>
-                  ) : null}
-                </div>,
-                document.body,
-              )
-            : null}
+            <option value="delete">Delete</option>
+            {onChangeCategory ? <option value="category">Change category</option> : null}
+            {onTextChange ? <option value="edit">Edit name</option> : null}
+          </select>
+          <div className="pointer-events-none grid h-8 w-8 place-items-center rounded-[8px]">
+            <ToolbarIconMore className="h-4 w-4 shrink-0" />
+          </div>
         </div>
-      ) : (
+        ) : (
         <button
           type="button"
-          className="grid min-h-8 min-w-8 place-items-center rounded-[6px] text-[#505258] hover:bg-slate-100 active:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 dark:active:bg-slate-800"
+          className="-ml-[9px] grid h-8 w-8 place-items-center rounded-[8px] text-[#505258] hover:bg-[#050C1810] active:bg-[#050C1810] dark:text-slate-400 dark:hover:bg-slate-800 dark:active:bg-slate-800"
           onPointerDown={blockDragFromControl}
           onClick={() => onDelete(item.id)}
           aria-label={`Delete ${item.text}`}
           title="Delete item"
         >
-          <ItemDeleteIcon className="h-5 w-5 sm:h-6 sm:w-6" />
+          <ItemDeleteIcon className="h-4 w-4" />
         </button>
-      )}
+        )}
+      </div>
     </li>
   )
 }

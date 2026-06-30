@@ -71,18 +71,16 @@ export function BackToListsIcon({ className }: IconProps) {
   return (
     <svg
       className={className}
-      width={24}
-      height={24}
-      viewBox="0 0 24 24"
+      width={16}
+      height={16}
+      viewBox="0 0 16 16"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden
     >
       <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M6.91475 11.6025L10.6648 7.85254L11.4602 8.64803L8.6705 11.4378L17.25 11.4378V12.5628H8.6705L11.4602 15.3525L10.6648 16.148L6.91475 12.398C6.69508 12.1784 6.69508 11.8222 6.91475 11.6025Z"
-        fill="currentColor"
+        d="M9.96973 1.46973L3.96973 7.46973C3.69512 7.74433 3.67766 8.17905 3.91797 8.47363L3.96973 8.53027L9.96973 14.5303L11.0303 13.4697L5.56055 8L11.0303 2.53027L9.96973 1.46973Z"
+        fill="#505258"
       />
     </svg>
   )
