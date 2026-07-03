@@ -1424,7 +1424,7 @@ export function ListPage() {
                 className="absolute inset-0 z-10 h-10 w-10 cursor-pointer appearance-none rounded-full bg-transparent text-transparent outline-none hover:bg-black/15 active:bg-black/15"
                 aria-label="List settings actions"
               >
-                <option value="">List settings</option>
+                <option value="" hidden />
                 <option value="aisles">Manage store aisle ordering</option>
                 <option value="stores">Manage stores</option>
                 <option value="invite">Invite collaborator</option>
@@ -1709,8 +1709,8 @@ export function ListPage() {
         </DndContext>
       )}
 
-      <div className="fixed bottom-0 left-0 right-0 z-20 overflow-x-clip overflow-y-visible bg-transparent px-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2 sm:px-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:pt-3">
-        <div className="mx-auto w-full max-w-lg">
+      <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-20 overflow-visible bg-transparent px-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2 sm:px-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:pt-3">
+        <div className="pointer-events-auto mx-auto w-full max-w-lg">
           {!footerExpanded ? (
             mode === 'plan' ? (
               <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 p-1">
@@ -1770,7 +1770,7 @@ export function ListPage() {
             >
               <button
                 type="button"
-                className="absolute -top-9 right-3 z-10 grid h-8 w-8 place-items-center rounded-full bg-white text-[#292A2E] shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
+                className="absolute -top-[40px] right-3 z-20 grid h-8 w-8 place-items-center rounded-full bg-white text-[#292A2E] shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
                 onClick={dismissFooterAddMode}
                 aria-label="Close add item panel"
                 title="Close"

@@ -441,6 +441,7 @@ export function SortableItem({
             aria-label={`Actions for ${item.text}`}
             onPointerDown={blockDragFromControl}
           >
+            <option value="" hidden />
             <option value="delete">Delete</option>
             {onChangeCategory ? <option value="category">Change category</option> : null}
             {onTextChange ? <option value="edit">Edit name</option> : null}

@@ -19,12 +19,12 @@ import {
   RECIPE_IMPORT_SCALE_OPTIONS,
   type RecipeImportScale,
 } from '../../lib/units'
-import { RecommendationThumbDownIcon } from './listIcons'
+import { ItemDeleteIcon } from './listIcons'
 
 const EACH_OPTIONS = Array.from({ length: 20 }, (_, i) => i + 1)
 
 const qtyBoxClass =
-  'box-border h-8 w-[40px] min-w-[40px] max-w-[40px] shrink-0 rounded border border-slate-200/80 bg-white px-1 text-center text-xs tabular-nums text-slate-700 [text-align-last:center] outline-none focus:border-slate-400 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-500'
+  'box-border h-8 w-[48px] min-w-[48px] max-w-[48px] shrink-0 rounded-l-[8px] rounded-r-none border border-r-0 border-slate-200/80 bg-white pl-0 pr-2 py-1 text-right text-base font-medium tabular-nums [text-align-last:right] text-[#505258] outline-none focus:border-slate-400 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-500'
 
 const qtyTextInputClass = `${qtyBoxClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`
 
@@ -32,7 +32,7 @@ const noChevron =
   'appearance-none bg-[length:0] [background-image:none] [&::-webkit-appearance]:none'
 
 const unitSelectClass =
-  `${noChevron} shrink-0 cursor-pointer border-0 bg-transparent p-0 text-[10px] leading-tight text-slate-500 outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 dark:text-slate-400`
+  `${noChevron} h-8 w-[48px] min-w-[48px] max-w-[48px] shrink-0 cursor-pointer rounded-l-none rounded-r-[8px] border border-slate-200/80 bg-white px-2 py-1 text-left text-base font-medium leading-5 text-[#505258] outline-none ring-0 focus:border-slate-400 focus:outline-none focus:ring-0 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-500`
 
 export type RecommendationBatchRow = {
   fingerprint: string
@@ -275,17 +275,17 @@ export function RecommendationsDrawer({
             </p>
           ) : (
             <>
-              <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-slate-100 pb-3 dark:border-slate-800">
-                <span className="text-xs font-medium text-slate-600 dark:text-slate-400">scale amounts</span>
+              <div className="mb-3 flex flex-wrap items-center gap-2 pb-3">
+                <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Scale amounts</span>
                 <div className="flex flex-wrap gap-1" role="group" aria-label="Scale suggestion quantities">
                   {RECIPE_IMPORT_SCALE_OPTIONS.map((sc) => (
                     <button
                       key={sc}
                       type="button"
                       onClick={() => applyScaleToAll(sc)}
-                      className={`min-h-8 min-w-10 rounded-lg border px-2.5 text-sm font-semibold tabular-nums transition-colors sm:px-3 ${
+                      className={`min-h-8 min-w-10 rounded-full border px-2.5 text-sm font-semibold tabular-nums transition-colors sm:px-3 ${
                         recipeScale === sc
-                          ? 'border-teal-700 bg-teal-700 text-white dark:border-teal-500 dark:bg-teal-600'
+                          ? 'border-transparent bg-[linear-gradient(147deg,#00B66F_0%,#005371_100%)] text-white'
                           : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800'
                       }`}
                     >
@@ -303,7 +303,7 @@ export function RecommendationsDrawer({
                   return (
                     <li
                       key={s.fingerprint}
-                      className="flex flex-wrap items-center gap-1.5 rounded-[6px] border border-slate-200 bg-white px-2 py-1.5 sm:gap-2 sm:px-3 sm:py-2 dark:border-slate-700 dark:bg-slate-900"
+                      className="flex flex-wrap items-center gap-1.5 rounded-[8px] bg-white px-2 py-1.5 sm:gap-2 sm:px-3 sm:py-2 dark:bg-slate-900"
                     >
                       <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
                         <input
@@ -385,7 +385,7 @@ export function RecommendationsDrawer({
                         >
                           {UNIT_OPTIONS.map((opt) => (
                             <option key={opt} value={opt}>
-                              {unitOptionLabel(opt)}
+                              {opt === 'each' ? 'ea' : unitOptionLabel(opt)}
                             </option>
                           ))}
                         </select>
@@ -402,7 +402,7 @@ export function RecommendationsDrawer({
                         title="Hide from recommendations"
                         onClick={() => void onDismiss(s.fingerprint, s.displayText)}
                       >
-                        <RecommendationThumbDownIcon className="h-5 w-5 sm:h-6 sm:w-6" />
+                        <ItemDeleteIcon className="h-4 w-4" />
                       </button>
                     </li>
                   )
@@ -416,7 +416,11 @@ export function RecommendationsDrawer({
           <button
             type="button"
             disabled={busy || batch.length === 0}
-            className="min-h-10 w-full rounded-xl bg-teal-700 py-3 text-sm font-semibold text-white shadow-sm disabled:opacity-50"
+            className={`min-h-12 w-full rounded-full py-3 text-base font-semibold text-white ${
+              busy || batch.length === 0
+                ? 'bg-slate-300'
+                : 'bg-[linear-gradient(147deg,#00B66F_0%,#005371_100%)]'
+            } disabled:opacity-50`}
             onClick={async () => {
               setBusy(true)
               try {

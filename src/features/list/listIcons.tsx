@@ -6,16 +6,16 @@ function CloseGlyphIcon({ className }: IconProps) {
   return (
     <svg
       className={className}
-      width={24}
-      height={24}
-      viewBox="0 0 24 24"
+      width={16}
+      height={16}
+      viewBox="0 0 16 16"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden
     >
       <path
-        d="M16.5227 8.27295L12.7954 12.0002L16.5227 15.7275L15.7273 16.5229L12 12.7957L8.27271 16.5229L7.47729 15.7275L11.2046 12.0002L7.47729 8.27295L8.27271 7.47754L12 11.2048L15.7273 7.47754L16.5227 8.27295Z"
-        fill="currentColor"
+        d="M13.5303 3.53027L9.06055 8L13.5303 12.4697L12.4697 13.5303L8 9.06055L3.53027 13.5303L2.46973 12.4697L6.93945 8L2.46973 3.53027L3.53027 2.46973L8 6.93945L12.4697 2.46973L13.5303 3.53027Z"
+        fill="#505258"
       />
     </svg>
   )
