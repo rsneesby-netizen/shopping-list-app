@@ -1710,10 +1710,10 @@ export function ListPage() {
       )}
 
       <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-20 overflow-visible bg-transparent px-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2 sm:px-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:pt-3">
-        <div className="pointer-events-auto mx-auto w-full max-w-lg">
+        <div className="mx-auto w-full max-w-lg">
           {!footerExpanded ? (
             mode === 'plan' ? (
-              <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 p-1">
+              <div className="pointer-events-auto grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 p-1">
                 <button
                   type="button"
                   className="flex h-12 min-w-0 items-center rounded-full bg-white px-3 text-left text-base font-normal text-slate-500 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
@@ -1743,7 +1743,7 @@ export function ListPage() {
                 </button>
               </div>
             ) : (
-              <div className="flex items-center justify-end p-1">
+              <div className="pointer-events-auto flex items-center justify-end p-1">
                 <button
                   type="button"
                   className="grid h-12 w-12 place-items-center rounded-full bg-white text-[22px] text-slate-700 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
@@ -1760,7 +1760,7 @@ export function ListPage() {
             )
           ) : (
             <div
-              className={`relative overflow-visible rounded-t-xl bg-white px-3 py-3 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] transition-all duration-200 ease-out dark:bg-slate-900 ${
+              className={`pointer-events-auto relative overflow-visible rounded-t-xl bg-white px-3 py-3 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] transition-all duration-200 ease-out dark:bg-slate-900 ${
                 footerClosing ? 'translate-y-8 opacity-0' : 'translate-y-0 opacity-100'
               }`}
               onPointerDown={handleFooterSheetPointerDown}
