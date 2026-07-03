@@ -258,17 +258,17 @@ export function ListPage() {
         }
         const viewportBottom = vv.height + vv.offsetTop
         const overlap = Math.max(0, window.innerHeight - viewportBottom)
-        // Ignore small visual-viewport noise while scrolling.
-        const nextInset = overlap > 80 ? Math.round(overlap) : 0
-        setFooterKeyboardInset(nextInset)
+        setFooterKeyboardInset(Math.round(overlap))
       })
     }
     updateInset()
     vv.addEventListener('resize', updateInset)
+    vv.addEventListener('scroll', updateInset)
     window.addEventListener('orientationchange', updateInset)
     return () => {
       if (rafId != null) window.cancelAnimationFrame(rafId)
       vv.removeEventListener('resize', updateInset)
+      vv.removeEventListener('scroll', updateInset)
       window.removeEventListener('orientationchange', updateInset)
       setFooterKeyboardInset(0)
     }
