@@ -142,6 +142,7 @@ export function ListPage() {
   const [showPrices] = useState(() => readShowPricesPreference())
   const [headerElevated, setHeaderElevated] = useState(false)
   const [shopSelectorVisible, setShopSelectorVisible] = useState(true)
+  const [footerKeyboardInset, setFooterKeyboardInset] = useState(0)
   const addItemInputRef = useRef<HTMLInputElement>(null)
   const footerSwipeStartYRef = useRef<number | null>(null)
   const footerSwipePointerIdRef = useRef<number | null>(null)
@@ -238,6 +239,34 @@ export function ListPage() {
       if (footerCloseTimerRef.current) clearTimeout(footerCloseTimerRef.current)
     }
   }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const vv = window.visualViewport
+    if (!vv) {
+      setFooterKeyboardInset(0)
+      return
+    }
+    const updateInset = () => {
+      if (!footerExpanded) {
+        setFooterKeyboardInset(0)
+        return
+      }
+      const viewportBottom = vv.height + vv.offsetTop
+      const overlap = Math.max(0, window.innerHeight - viewportBottom)
+      setFooterKeyboardInset(overlap)
+    }
+    updateInset()
+    vv.addEventListener('resize', updateInset)
+    vv.addEventListener('scroll', updateInset)
+    window.addEventListener('orientationchange', updateInset)
+    return () => {
+      vv.removeEventListener('resize', updateInset)
+      vv.removeEventListener('scroll', updateInset)
+      window.removeEventListener('orientationchange', updateInset)
+      setFooterKeyboardInset(0)
+    }
+  }, [footerExpanded])
 
   useEffect(() => {
     function onScroll() {
@@ -1732,7 +1761,10 @@ export function ListPage() {
         </DndContext>
       )}
 
-      <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-20 overflow-visible bg-transparent px-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2 sm:px-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:pt-3">
+      <div
+        className="pointer-events-none fixed bottom-0 left-0 right-0 z-20 overflow-visible bg-transparent px-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2 transition-transform duration-200 ease-out sm:px-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:pt-3"
+        style={{ transform: footerExpanded && footerKeyboardInset > 0 ? `translateY(-${footerKeyboardInset}px)` : 'translateY(0)' }}
+      >
         <div className="pointer-events-none mx-auto w-full max-w-lg">
           {!footerExpanded ? (
             mode === 'plan' ? (
