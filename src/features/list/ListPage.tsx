@@ -141,10 +141,12 @@ export function ListPage() {
   /** Off by default; remembered in localStorage */
   const [showPrices] = useState(() => readShowPricesPreference())
   const [headerElevated, setHeaderElevated] = useState(false)
+  const [shopSelectorVisible, setShopSelectorVisible] = useState(true)
   const addItemInputRef = useRef<HTMLInputElement>(null)
   const footerSwipeStartYRef = useRef<number | null>(null)
   const footerSwipePointerIdRef = useRef<number | null>(null)
   const footerCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastScrollYRef = useRef(0)
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
@@ -239,7 +241,18 @@ export function ListPage() {
 
   useEffect(() => {
     function onScroll() {
-      setHeaderElevated(window.scrollY > 4)
+      const y = window.scrollY
+      setHeaderElevated(y > 4)
+      if (y <= 2) {
+        setShopSelectorVisible(true)
+      } else if (y > lastScrollYRef.current + 1) {
+        // Scrolling down content upward: hide selector.
+        setShopSelectorVisible(false)
+      } else if (y < lastScrollYRef.current - 1) {
+        // Scrolling back toward top: show selector.
+        setShopSelectorVisible(true)
+      }
+      lastScrollYRef.current = y
     }
     onScroll()
     window.addEventListener('scroll', onScroll, { passive: true })
@@ -1382,7 +1395,7 @@ export function ListPage() {
     <div className="mx-auto flex min-h-screen max-w-lg flex-col scroll-pb-[calc(15rem+env(safe-area-inset-bottom,0px))] bg-white px-2 pb-[calc(15rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-3 sm:pb-[calc(15rem+env(safe-area-inset-bottom,0px))]">
       <div className="sticky top-0 z-40 h-0">
         <div
-          className="pointer-events-auto -mx-2 h-[130px] bg-[linear-gradient(to_bottom,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.48)_42%,rgba(255,255,255,0)_100%)] backdrop-blur-[24px] [mask-image:linear-gradient(to_bottom,black_0%,black_55%,transparent_100%)] sm:-mx-3"
+          className="pointer-events-none -mx-2 h-[130px] bg-[linear-gradient(to_bottom,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.48)_42%,rgba(255,255,255,0)_100%)] backdrop-blur-[24px] [mask-image:linear-gradient(to_bottom,black_0%,black_55%,transparent_100%)] sm:-mx-3"
           aria-hidden
         />
       </div>
@@ -1444,7 +1457,42 @@ export function ListPage() {
           </div>
         </div>
         <div className="flex min-h-10 items-center justify-between px-2 pr-1">
-          <span />
+          {mode === 'shop' ? (
+            <div
+              className={`relative h-10 min-w-0 max-w-full flex-1 transition-opacity duration-200 ${
+                shopSelectorVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
+              }`}
+              style={{ width: `${storeSelectorWidthCh}ch`, maxWidth: `${storeSelectorWidthCh}ch` }}
+            >
+              <label htmlFor="list-store-layout" className="sr-only">
+                Store layout
+              </label>
+              <select
+                id="list-store-layout"
+                className="h-10 w-full appearance-none rounded-full border border-slate-900/15 bg-white py-2 pl-3 pr-9 text-base font-medium text-slate-600 outline-none hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
+                value={list?.store_preset_id ?? ''}
+                onChange={(e) => void persistPreset(e.target.value || null)}
+                aria-label="Store layout"
+              >
+                {presets.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-600" aria-hidden>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                  <path
+                    fillRule="evenodd"
+                    d="M5.23 7.21a.75.75 0 011.06.02L10 11.084l3.71-3.852a.75.75 0 111.08 1.04l-4.24 4.4a.75.75 0 01-1.08 0l-4.24-4.4a.75.75 0 01.02-1.06z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </span>
+            </div>
+          ) : (
+            <span />
+          )}
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -1498,108 +1546,75 @@ export function ListPage() {
           </p>
         )}
       </header>
-      {mode === 'shop' ? (
-        <div className="mb-2 px-2 sm:mb-3">
-          <div
-            className="relative h-10 min-w-0 max-w-full"
-            style={{ width: `${storeSelectorWidthCh}ch`, maxWidth: `${storeSelectorWidthCh}ch` }}
-          >
-            <label htmlFor="list-store-layout" className="sr-only">
-              Store layout
-            </label>
-            <select
-              id="list-store-layout"
-              className="h-10 w-full appearance-none rounded-full border border-slate-900/15 bg-white py-2 pl-3 pr-9 text-base font-medium text-slate-600 outline-none hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
-              value={list?.store_preset_id ?? ''}
-              onChange={(e) => void persistPreset(e.target.value || null)}
-              aria-label="Store layout"
-            >
-              {presets.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-600" aria-hidden>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-                <path
-                  fillRule="evenodd"
-                  d="M5.23 7.21a.75.75 0 011.06.02L10 11.084l3.71-3.852a.75.75 0 111.08 1.04l-4.24 4.4a.75.75 0 01-1.08 0l-4.24-4.4a.75.75 0 01.02-1.06z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </span>
-          </div>
-        </div>
-      ) : null}
-
       {view === 'flat' ? (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => void onDragEnd(e)}>
-          <section>
-            <SortableContext items={activeSorted.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-              <ul className="flex flex-col gap-2 sm:gap-2">
-                {activeSorted.map((item) => (
-                  <SortableItem
-                    key={item.id}
-                    item={item}
-                    showDragHandle={mode === 'plan'}
-                    showPrices={showPrices}
-                    isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
-                    estimatedLineCost={pricing.items[item.id]?.estimatedCost ?? 0}
-                    hasYourPrice={parsePriceCalibrationForScope(item, priceCalibrationScopeKey) !== null}
-                    onOpenYourPrice={showPrices ? () => setPriceCalItemId(item.id) : undefined}
-                    dragFromRow
-                    itemMenuVariant="overflow"
-                    onChangeCategory={openCategoryPicker}
-                    onToggle={(id, c) => void toggleItem(id, c)}
-                    onDelete={(id) => void deleteItem(id)}
-                    onQuantityChange={(id, q) => void changeQuantity(id, q)}
-                    onUnitChange={(id, u) => void changeUnit(id, u)}
-                    onTextChange={(id, t) => void changeItemText(id, t)}
-                  />
-                ))}
-              </ul>
-            </SortableContext>
-          </section>
-          <section className="mt-8 border-t border-slate-200 pt-4 dark:border-slate-800">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <h2 className="text-base font-semibold text-slate-500">Completed</h2>
-              <button
-                type="button"
-                className="min-h-8 rounded-[99px] border border-slate-200 px-3 py-1 text-sm text-slate-600 hover:bg-slate-100 active:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:active:bg-slate-800 disabled:opacity-40"
-                onClick={() => void deleteCompletedItems()}
-                disabled={!completedSorted.length}
-              >
-                Delete items
-              </button>
-            </div>
-            <SortableContext items={completedSorted.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-              <ul className="flex flex-col gap-2 sm:gap-2">
-                {completedSorted.map((item) => (
-                  <SortableItem
-                    key={item.id}
-                    item={item}
-                    showDragHandle={mode === 'plan'}
-                    showPrices={showPrices}
-                    isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
-                    estimatedLineCost={pricing.items[item.id]?.estimatedCost ?? 0}
-                    hasYourPrice={parsePriceCalibrationForScope(item, priceCalibrationScopeKey) !== null}
-                    onOpenYourPrice={showPrices ? () => setPriceCalItemId(item.id) : undefined}
-                    dragFromRow
-                    onToggle={(id, c) => void toggleItem(id, c)}
-                    onDelete={(id) => void deleteItem(id)}
-                    onQuantityChange={(id, q) => void changeQuantity(id, q)}
-                    onUnitChange={(id, u) => void changeUnit(id, u)}
-                    onTextChange={(id, t) => void changeItemText(id, t)}
-                  />
-                ))}
-              </ul>
-            </SortableContext>
-          </section>
+          <div className={mode === 'shop' ? 'p-1 pt-2' : 'p-1'}>
+            <section>
+              <SortableContext items={activeSorted.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+                <ul className="flex flex-col gap-2 sm:gap-2">
+                  {activeSorted.map((item) => (
+                    <SortableItem
+                      key={item.id}
+                      item={item}
+                      showDragHandle={mode === 'plan'}
+                      showPrices={showPrices}
+                      isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
+                      estimatedLineCost={pricing.items[item.id]?.estimatedCost ?? 0}
+                      hasYourPrice={parsePriceCalibrationForScope(item, priceCalibrationScopeKey) !== null}
+                      onOpenYourPrice={showPrices ? () => setPriceCalItemId(item.id) : undefined}
+                      dragFromRow
+                      itemMenuVariant="overflow"
+                      onChangeCategory={openCategoryPicker}
+                      onToggle={(id, c) => void toggleItem(id, c)}
+                      onDelete={(id) => void deleteItem(id)}
+                      onQuantityChange={(id, q) => void changeQuantity(id, q)}
+                      onUnitChange={(id, u) => void changeUnit(id, u)}
+                      onTextChange={(id, t) => void changeItemText(id, t)}
+                    />
+                  ))}
+                </ul>
+              </SortableContext>
+            </section>
+            <section className="mt-8 border-t border-slate-200 pt-4 dark:border-slate-800">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h2 className="text-base font-semibold text-slate-500">Completed</h2>
+                <button
+                  type="button"
+                  className="min-h-8 rounded-[99px] border border-slate-200 px-3 py-1 text-sm text-slate-600 hover:bg-slate-100 active:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:active:bg-slate-800 disabled:opacity-40"
+                  onClick={() => void deleteCompletedItems()}
+                  disabled={!completedSorted.length}
+                >
+                  Delete items
+                </button>
+              </div>
+              <SortableContext items={completedSorted.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+                <ul className="flex flex-col gap-2 sm:gap-2">
+                  {completedSorted.map((item) => (
+                    <SortableItem
+                      key={item.id}
+                      item={item}
+                      showDragHandle={mode === 'plan'}
+                      showPrices={showPrices}
+                      isOnSpecial={pricing.items[item.id]?.onSpecial ?? false}
+                      estimatedLineCost={pricing.items[item.id]?.estimatedCost ?? 0}
+                      hasYourPrice={parsePriceCalibrationForScope(item, priceCalibrationScopeKey) !== null}
+                      onOpenYourPrice={showPrices ? () => setPriceCalItemId(item.id) : undefined}
+                      dragFromRow
+                      onToggle={(id, c) => void toggleItem(id, c)}
+                      onDelete={(id) => void deleteItem(id)}
+                      onQuantityChange={(id, q) => void changeQuantity(id, q)}
+                      onUnitChange={(id, u) => void changeUnit(id, u)}
+                      onTextChange={(id, t) => void changeItemText(id, t)}
+                    />
+                  ))}
+                </ul>
+              </SortableContext>
+            </section>
+          </div>
         </DndContext>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => void onDragEnd(e)}>
-          <div className="flex flex-col gap-3 sm:gap-4">
+          <div className={`flex flex-col gap-3 p-1 sm:gap-4 ${mode === 'shop' ? 'pt-2' : ''}`}>
             <SortableContext items={activeSorted.map((i) => i.id)} strategy={verticalListSortingStrategy}>
               {categoryWalkOrder.map((key) => {
                 const rows = groupedBuckets.buckets[key] ?? []
