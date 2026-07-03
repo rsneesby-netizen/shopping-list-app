@@ -1369,7 +1369,7 @@ export function ListPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-full max-w-lg flex-col overflow-x-hidden scroll-pb-[calc(15rem+env(safe-area-inset-bottom,0px))] bg-white px-2 pb-[calc(15rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-3 sm:pb-[calc(15rem+env(safe-area-inset-bottom,0px))]">
+    <div className="mx-auto flex min-h-full max-w-lg flex-col scroll-pb-[calc(15rem+env(safe-area-inset-bottom,0px))] bg-white px-2 pb-[calc(15rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-3 sm:pb-[calc(15rem+env(safe-area-inset-bottom,0px))]">
       <div className="sticky top-0 z-40 h-0">
         <div
           className="pointer-events-auto -mx-2 h-[130px] bg-[linear-gradient(to_bottom,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.48)_42%,rgba(255,255,255,0)_100%)] backdrop-blur-[24px] [mask-image:linear-gradient(to_bottom,black_0%,black_55%,transparent_100%)] sm:-mx-3"
@@ -1707,10 +1707,10 @@ export function ListPage() {
       )}
 
       <div className="fixed bottom-0 left-0 right-0 z-20 overflow-x-hidden bg-transparent px-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2 sm:px-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:pt-3">
-        <div className="mx-auto max-w-lg">
+        <div className="mx-auto w-full max-w-lg">
           {!footerExpanded ? (
             mode === 'plan' ? (
-              <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
+              <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 overflow-hidden">
                 <button
                   type="button"
                   className="flex h-12 min-w-0 items-center rounded-full bg-white px-3 text-left text-base font-normal text-slate-500 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
