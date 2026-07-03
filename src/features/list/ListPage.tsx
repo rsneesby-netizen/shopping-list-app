@@ -1710,7 +1710,7 @@ export function ListPage() {
       )}
 
       <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-20 overflow-visible bg-transparent px-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2 sm:px-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:pt-3">
-        <div className="mx-auto w-full max-w-lg">
+        <div className="pointer-events-none mx-auto w-full max-w-lg">
           {!footerExpanded ? (
             mode === 'plan' ? (
               <div className="pointer-events-auto grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 p-1">
