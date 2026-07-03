@@ -247,22 +247,28 @@ export function ListPage() {
       setFooterKeyboardInset(0)
       return
     }
+    let rafId: number | null = null
     const updateInset = () => {
-      if (!footerExpanded) {
-        setFooterKeyboardInset(0)
-        return
-      }
-      const viewportBottom = vv.height + vv.offsetTop
-      const overlap = Math.max(0, window.innerHeight - viewportBottom)
-      setFooterKeyboardInset(overlap)
+      if (rafId != null) window.cancelAnimationFrame(rafId)
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null
+        if (!footerExpanded) {
+          setFooterKeyboardInset(0)
+          return
+        }
+        const viewportBottom = vv.height + vv.offsetTop
+        const overlap = Math.max(0, window.innerHeight - viewportBottom)
+        // Ignore small visual-viewport noise while scrolling.
+        const nextInset = overlap > 80 ? Math.round(overlap) : 0
+        setFooterKeyboardInset(nextInset)
+      })
     }
     updateInset()
     vv.addEventListener('resize', updateInset)
-    vv.addEventListener('scroll', updateInset)
     window.addEventListener('orientationchange', updateInset)
     return () => {
+      if (rafId != null) window.cancelAnimationFrame(rafId)
       vv.removeEventListener('resize', updateInset)
-      vv.removeEventListener('scroll', updateInset)
       window.removeEventListener('orientationchange', updateInset)
       setFooterKeyboardInset(0)
     }
@@ -1762,7 +1768,7 @@ export function ListPage() {
       )}
 
       <div
-        className="pointer-events-none fixed bottom-0 left-0 right-0 z-20 overflow-visible bg-transparent px-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2 transition-transform duration-200 ease-out sm:px-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:pt-3"
+        className="pointer-events-none fixed bottom-0 left-0 right-0 z-20 overflow-visible bg-transparent px-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2 sm:px-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:pt-3"
         style={{ transform: footerExpanded && footerKeyboardInset > 0 ? `translateY(-${footerKeyboardInset}px)` : 'translateY(0)' }}
       >
         <div className="pointer-events-none mx-auto w-full max-w-lg">
