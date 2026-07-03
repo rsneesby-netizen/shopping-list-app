@@ -1366,6 +1366,14 @@ export function ListPage() {
     navigator.vibrate(14)
   }
 
+  function handleHeaderControlPointerDownCapture(e: React.PointerEvent<HTMLElement>) {
+    const target = e.target as HTMLElement
+    if (!target.closest('button, a, select, [role="button"]')) return
+    if (document.activeElement === addItemInputRef.current) {
+      addItemInputRef.current?.blur()
+    }
+  }
+
   if (!listId) {
     return <p className="p-4 text-sm text-slate-600">Missing list id.</p>
   }
@@ -1378,7 +1386,10 @@ export function ListPage() {
           aria-hidden
         />
       </div>
-      <header className="sticky top-0 z-50 -mx-2 mb-2 flex flex-col gap-1.5 bg-transparent px-2 pt-2 sm:-mx-3 sm:mb-3 sm:gap-2 sm:px-3 sm:pt-3">
+      <header
+        className="sticky top-0 z-50 -mx-2 mb-2 flex flex-col gap-1.5 bg-transparent px-2 pt-2 sm:-mx-3 sm:mb-3 sm:gap-2 sm:px-3 sm:pt-3"
+        onPointerDownCapture={handleHeaderControlPointerDownCapture}
+      >
         <div className="flex min-h-16 items-center justify-between px-2 py-2">
           <div className="flex min-w-0 items-center gap-3">
             <Link
