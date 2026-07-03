@@ -1,7 +1,8 @@
 import {
   DndContext,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   closestCenter,
   useSensor,
   useSensors,
@@ -146,7 +147,8 @@ export function ListPage() {
   const footerCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 80 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 10 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
@@ -1369,7 +1371,7 @@ export function ListPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-full max-w-lg flex-col scroll-pb-[calc(15rem+env(safe-area-inset-bottom,0px))] bg-white px-2 pb-[calc(15rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-3 sm:pb-[calc(15rem+env(safe-area-inset-bottom,0px))]">
+    <div className="mx-auto flex min-h-screen max-w-lg flex-col scroll-pb-[calc(15rem+env(safe-area-inset-bottom,0px))] bg-white px-2 pb-[calc(15rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-3 sm:pb-[calc(15rem+env(safe-area-inset-bottom,0px))]">
       <div className="sticky top-0 z-40 h-0">
         <div
           className="pointer-events-auto -mx-2 h-[130px] bg-[linear-gradient(to_bottom,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.48)_42%,rgba(255,255,255,0)_100%)] backdrop-blur-[24px] [mask-image:linear-gradient(to_bottom,black_0%,black_55%,transparent_100%)] sm:-mx-3"
@@ -1434,40 +1436,7 @@ export function ListPage() {
           </div>
         </div>
         <div className="flex min-h-10 items-center justify-between px-2 pr-1">
-          {mode === 'shop' ? (
-            <div
-              className="relative h-10 min-w-0 max-w-full flex-1"
-              style={{ width: `${storeSelectorWidthCh}ch`, maxWidth: `${storeSelectorWidthCh}ch` }}
-            >
-              <label htmlFor="list-store-layout" className="sr-only">
-                Store layout
-              </label>
-              <select
-                id="list-store-layout"
-                className="h-10 w-full appearance-none rounded-full border border-slate-900/15 bg-white py-2 pl-3 pr-9 text-base font-medium text-slate-600 outline-none hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
-                value={list?.store_preset_id ?? ''}
-                onChange={(e) => void persistPreset(e.target.value || null)}
-                aria-label="Store layout"
-              >
-                {presets.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-600" aria-hidden>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-                  <path
-                    fillRule="evenodd"
-                    d="M5.23 7.21a.75.75 0 011.06.02L10 11.084l3.71-3.852a.75.75 0 111.08 1.04l-4.24 4.4a.75.75 0 01-1.08 0l-4.24-4.4a.75.75 0 01.02-1.06z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              </span>
-            </div>
-          ) : (
-            <span />
-          )}
+          <span />
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -1521,6 +1490,40 @@ export function ListPage() {
           </p>
         )}
       </header>
+      {mode === 'shop' ? (
+        <div className="mb-2 px-2 sm:mb-3">
+          <div
+            className="relative h-10 min-w-0 max-w-full"
+            style={{ width: `${storeSelectorWidthCh}ch`, maxWidth: `${storeSelectorWidthCh}ch` }}
+          >
+            <label htmlFor="list-store-layout" className="sr-only">
+              Store layout
+            </label>
+            <select
+              id="list-store-layout"
+              className="h-10 w-full appearance-none rounded-full border border-slate-900/15 bg-white py-2 pl-3 pr-9 text-base font-medium text-slate-600 outline-none hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
+              value={list?.store_preset_id ?? ''}
+              onChange={(e) => void persistPreset(e.target.value || null)}
+              aria-label="Store layout"
+            >
+              {presets.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-600" aria-hidden>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                <path
+                  fillRule="evenodd"
+                  d="M5.23 7.21a.75.75 0 011.06.02L10 11.084l3.71-3.852a.75.75 0 111.08 1.04l-4.24 4.4a.75.75 0 01-1.08 0l-4.24-4.4a.75.75 0 01.02-1.06z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </span>
+          </div>
+        </div>
+      ) : null}
 
       {view === 'flat' ? (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => void onDragEnd(e)}>
@@ -1706,11 +1709,11 @@ export function ListPage() {
         </DndContext>
       )}
 
-      <div className="fixed bottom-0 left-0 right-0 z-20 overflow-x-hidden bg-transparent px-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2 sm:px-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:pt-3">
+      <div className="fixed bottom-0 left-0 right-0 z-20 overflow-x-clip overflow-y-visible bg-transparent px-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2 sm:px-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:pt-3">
         <div className="mx-auto w-full max-w-lg">
           {!footerExpanded ? (
             mode === 'plan' ? (
-              <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 overflow-hidden">
+              <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 p-1">
                 <button
                   type="button"
                   className="flex h-12 min-w-0 items-center rounded-full bg-white px-3 text-left text-base font-normal text-slate-500 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
@@ -1740,7 +1743,7 @@ export function ListPage() {
                 </button>
               </div>
             ) : (
-              <div className="flex items-center justify-end">
+              <div className="flex items-center justify-end p-1">
                 <button
                   type="button"
                   className="grid h-12 w-12 place-items-center rounded-full bg-white text-[22px] text-slate-700 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
@@ -1757,7 +1760,7 @@ export function ListPage() {
             )
           ) : (
             <div
-              className={`rounded-t-xl bg-white px-3 py-3 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] transition-all duration-200 ease-out dark:bg-slate-900 ${
+              className={`relative overflow-visible rounded-t-xl bg-white px-3 py-3 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] transition-all duration-200 ease-out dark:bg-slate-900 ${
                 footerClosing ? 'translate-y-8 opacity-0' : 'translate-y-0 opacity-100'
               }`}
               onPointerDown={handleFooterSheetPointerDown}
@@ -1765,6 +1768,20 @@ export function ListPage() {
               onPointerUp={clearFooterSheetSwipe}
               onPointerCancel={clearFooterSheetSwipe}
             >
+              <button
+                type="button"
+                className="absolute -top-9 right-3 z-10 grid h-8 w-8 place-items-center rounded-full bg-white text-[#292A2E] shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
+                onClick={dismissFooterAddMode}
+                aria-label="Close add item panel"
+                title="Close"
+              >
+                <svg width="12" height="5" viewBox="0 0 12 5" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                  <path
+                    d="M3.27729e-07 1.25195L5.5 4.87695C5.75041 5.04199 6.07576 5.04199 6.32617 4.87695L11.8262 1.25195L11 -1.97957e-06L5.91309 3.35254L0.826172 -2.869e-06L3.27729e-07 1.25195Z"
+                    fill="#292A2E"
+                  />
+                </svg>
+              </button>
               <div className="flex items-center gap-2">
                 <input
                   ref={addItemInputRef}

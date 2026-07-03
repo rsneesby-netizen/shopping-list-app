@@ -280,7 +280,7 @@ export function SortableItem({
         (inGroupedBlock
           ? 'relative overflow-hidden rounded-none bg-transparent dark:bg-transparent'
           : 'relative overflow-hidden rounded-[8px] bg-white dark:bg-slate-900') +
-        (rowDrag ? ' touch-none cursor-grab active:cursor-grabbing' : '')
+        (rowDrag ? ' cursor-grab active:cursor-grabbing md:touch-none' : '')
       }
     >
       {swipeOffset < 0 ? (
