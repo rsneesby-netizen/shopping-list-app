@@ -600,12 +600,16 @@ export function ListPage() {
     setQtyTouched(false)
     setUnitTouched(false)
     setError(null)
+    requestAnimationFrame(() => {
+      addItemInputRef.current?.focus()
+    })
   }
 
   async function deleteItem(id: string) {
     if (!listId) return
     const snap = items.find((i) => i.id === id)
     if (!snap) return
+    triggerDeleteHaptic()
     const fp = fingerprintFromText(snap.text)
     setItems((prev) => prev.filter((i) => i.id !== id))
     try {
@@ -1355,12 +1359,17 @@ export function ListPage() {
     footerSwipePointerIdRef.current = null
   }
 
+  function triggerDeleteHaptic() {
+    if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return
+    navigator.vibrate(14)
+  }
+
   if (!listId) {
     return <p className="p-4 text-sm text-slate-600">Missing list id.</p>
   }
 
   return (
-    <div className="mx-auto flex min-h-full max-w-lg flex-col scroll-pb-[calc(15rem+env(safe-area-inset-bottom,0px))] bg-white px-2 pb-[calc(15rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-3 sm:pb-[calc(15rem+env(safe-area-inset-bottom,0px))]">
+    <div className="mx-auto flex min-h-full max-w-lg flex-col overflow-x-hidden scroll-pb-[calc(15rem+env(safe-area-inset-bottom,0px))] bg-white px-2 pb-[calc(15rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-3 sm:pb-[calc(15rem+env(safe-area-inset-bottom,0px))]">
       <div className="sticky top-0 z-40 h-0">
         <div
           className="pointer-events-auto -mx-2 h-[130px] bg-[linear-gradient(to_bottom,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.48)_42%,rgba(255,255,255,0)_100%)] backdrop-blur-[24px] [mask-image:linear-gradient(to_bottom,black_0%,black_55%,transparent_100%)] sm:-mx-3"
@@ -1379,7 +1388,7 @@ export function ListPage() {
               <BackToListsIcon className="h-4 w-4 shrink-0" />
             </Link>
             <input
-              className="min-w-0 rounded-[4px] border border-transparent bg-transparent px-1 py-1 text-sm font-medium leading-5 text-slate-600 outline-none focus:border-[#1868DB]"
+              className="min-w-0 rounded-[4px] border border-transparent bg-transparent px-1 py-1 text-base font-medium leading-5 text-slate-600 outline-none focus:border-[#1868DB]"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               onBlur={() => void persistTitle(title)}
@@ -1391,7 +1400,7 @@ export function ListPage() {
             <button
               type="button"
               onClick={toggleMode}
-              className={`flex h-10 items-center gap-2 rounded-full px-3 pr-4 text-sm font-medium text-white shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:brightness-95 active:brightness-95 ${
+              className={`flex h-10 items-center gap-2 rounded-full px-3 pr-4 text-base font-medium text-white shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:brightness-95 active:brightness-95 ${
                 mode === 'plan'
                   ? 'bg-[linear-gradient(147deg,#00B66F_0%,#005371_100%)]'
                   : 'bg-[linear-gradient(147deg,#D500F1_0%,#00338C_100%)]'
@@ -1435,7 +1444,7 @@ export function ListPage() {
               </label>
               <select
                 id="list-store-layout"
-                className="h-10 w-full appearance-none rounded-full border border-slate-900/15 bg-white py-2 pl-3 pr-9 text-sm font-medium text-slate-600 outline-none hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
+                className="h-10 w-full appearance-none rounded-full border border-slate-900/15 bg-white py-2 pl-3 pr-9 text-base font-medium text-slate-600 outline-none hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
                 value={list?.store_preset_id ?? ''}
                 onChange={(e) => void persistPreset(e.target.value || null)}
                 aria-label="Store layout"
@@ -1517,7 +1526,7 @@ export function ListPage() {
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => void onDragEnd(e)}>
           <section>
             <SortableContext items={activeSorted.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-              <ul className="flex flex-col gap-1.5 sm:gap-2">
+              <ul className="flex flex-col gap-2 sm:gap-2">
                 {activeSorted.map((item) => (
                   <SortableItem
                     key={item.id}
@@ -1543,10 +1552,10 @@ export function ListPage() {
           </section>
           <section className="mt-8 border-t border-slate-200 pt-4 dark:border-slate-800">
             <div className="mb-2 flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-slate-500">Completed</h2>
+              <h2 className="text-base font-semibold text-slate-500">Completed</h2>
               <button
                 type="button"
-                className="min-h-8 rounded-[99px] border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:bg-slate-100 active:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:active:bg-slate-800 disabled:opacity-40"
+                className="min-h-8 rounded-[99px] border border-slate-200 px-3 py-1 text-sm text-slate-600 hover:bg-slate-100 active:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:active:bg-slate-800 disabled:opacity-40"
                 onClick={() => void deleteCompletedItems()}
                 disabled={!completedSorted.length}
               >
@@ -1554,7 +1563,7 @@ export function ListPage() {
               </button>
             </div>
             <SortableContext items={completedSorted.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-              <ul className="flex flex-col gap-1.5 sm:gap-2">
+              <ul className="flex flex-col gap-2 sm:gap-2">
                 {completedSorted.map((item) => (
                   <SortableItem
                     key={item.id}
@@ -1586,11 +1595,11 @@ export function ListPage() {
                 if (!rows.length) return null
                 const collapsed = !!collapsedCategoryKeys[key]
                 return (
-                  <section key={key} className="space-y-1">
+                  <section key={key} className="space-y-1 py-0.5">
                     <div className="flex items-center justify-between gap-2 py-0.5">
                       <button
                         type="button"
-                        className={`-ml-[7px] flex h-6 items-center gap-3 rounded-full pl-1.5 pr-4 text-[12px] font-medium leading-4 text-[#505258] ${
+                        className={`-ml-[7px] flex h-6 items-center gap-[14px] rounded-full pl-1.5 pr-4 text-[14px] font-medium leading-4 text-[#505258] ${
                           collapsed
                             ? 'bg-[rgba(5,12,24,0.06)] hover:bg-[rgba(11,18,14,0.14)] active:bg-[rgba(11,18,14,0.14)]'
                             : 'bg-transparent hover:bg-[rgba(5,12,24,0.06)] active:bg-[rgba(5,12,24,0.06)]'
@@ -1626,7 +1635,7 @@ export function ListPage() {
                         collapsed ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
                       }`}
                     >
-                      <ul className="min-h-0 flex flex-col gap-1.5 overflow-hidden rounded-[6px] bg-white dark:bg-slate-900 sm:gap-2">
+                      <ul className="min-h-0 flex flex-col gap-2 overflow-hidden rounded-[6px] bg-white dark:bg-slate-900 sm:gap-2">
                         {rows.map((item) => (
                           <SortableItem
                             key={item.id}
@@ -1656,10 +1665,10 @@ export function ListPage() {
             </SortableContext>
             <section className="mt-8 border-t border-slate-200 pt-4 dark:border-slate-800">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold text-slate-500">Completed</h2>
+                <h2 className="text-base font-semibold text-slate-500">Completed</h2>
                 <button
                   type="button"
-                  className="min-h-8 rounded-[99px] border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:bg-slate-100 active:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:active:bg-slate-800 disabled:opacity-40"
+                  className="min-h-8 rounded-[99px] border border-slate-200 px-3 py-1 text-sm text-slate-600 hover:bg-slate-100 active:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:active:bg-slate-800 disabled:opacity-40"
                   onClick={() => void deleteCompletedItems()}
                   disabled={!completedSorted.length}
                 >
@@ -1668,7 +1677,7 @@ export function ListPage() {
               </div>
               {completedSorted.length ? (
                 <SortableContext items={completedSorted.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-                  <ul className="flex flex-col gap-1.5 overflow-hidden rounded-[6px] bg-white dark:bg-slate-900 sm:gap-2">
+                  <ul className="flex flex-col gap-2 overflow-hidden rounded-[6px] bg-white dark:bg-slate-900 sm:gap-2">
                     {completedSorted.map((item) => (
                       <SortableItem
                         key={item.id}
@@ -1697,29 +1706,33 @@ export function ListPage() {
         </DndContext>
       )}
 
-      <div className="fixed bottom-0 left-0 right-0 z-20 bg-transparent px-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2 sm:px-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:pt-3">
+      <div className="fixed bottom-0 left-0 right-0 z-20 overflow-x-hidden bg-transparent px-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2 sm:px-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:pt-3">
         <div className="mx-auto max-w-lg">
           {!footerExpanded ? (
             mode === 'plan' ? (
-              <div className="flex items-center gap-2">
+              <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
                 <button
                   type="button"
-                  className="flex h-12 min-w-0 flex-1 items-center rounded-full bg-white px-3 text-left text-sm font-normal text-slate-500 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
+                  className="flex h-12 min-w-0 items-center rounded-full bg-white px-3 text-left text-base font-normal text-slate-500 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
                   onClick={openFooterAddMode}
+                  onPointerDown={(e) => {
+                    e.preventDefault()
+                    openFooterAddMode()
+                  }}
                 >
                   Add item
                 </button>
                 <button
                   type="button"
-                  className="flex h-12 items-center gap-2 rounded-full bg-white px-3 text-sm font-medium text-slate-700 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
+                  className="flex h-12 min-w-0 items-center gap-2 rounded-full bg-white px-3 text-base font-medium text-slate-700 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
                   onClick={() => setRecipeUrlOpen(true)}
                 >
                   <span aria-hidden>🔗</span>
-                  From URL
+                  <span className="truncate">From URL</span>
                 </button>
                 <button
                   type="button"
-                  className="grid h-12 w-12 place-items-center rounded-full bg-white text-slate-700 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
+                  className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white text-[18px] text-slate-700 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
                   onClick={() => setRecOpen(true)}
                   aria-label="Recommendations"
                 >
@@ -1730,8 +1743,12 @@ export function ListPage() {
               <div className="flex items-center justify-end">
                 <button
                   type="button"
-                  className="grid h-12 w-12 place-items-center rounded-full bg-white text-slate-700 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
+                  className="grid h-12 w-12 place-items-center rounded-full bg-white text-[22px] text-slate-700 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
                   onClick={openFooterAddMode}
+                  onPointerDown={(e) => {
+                    e.preventDefault()
+                    openFooterAddMode()
+                  }}
                   aria-label="Add item"
                 >
                   +
@@ -1751,15 +1768,23 @@ export function ListPage() {
               <div className="flex items-center gap-2">
                 <input
                   ref={addItemInputRef}
-                  className="h-12 min-w-0 flex-1 rounded-full border-2 border-[#1868DB] bg-white px-3 text-base text-slate-700 outline-none dark:bg-slate-950"
+                  className="h-12 min-w-0 flex-1 rounded-full border-2 border-[#1868DB] bg-white px-3 text-[18px] text-slate-700 outline-none dark:bg-slate-950"
+                  autoFocus
+                  autoCapitalize="words"
+                  enterKeyHint="done"
                   placeholder="Add item"
                   value={newText}
                   onChange={(e) => setNewText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter') return
+                    e.preventDefault()
+                    void addItem()
+                  }}
                 />
                 <div className="flex h-12 items-center rounded-full bg-white p-1 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)]">
                   {newUnit === 'each' ? (
                     <select
-                      className="h-10 min-w-[40px] appearance-none rounded-full border-0 bg-white px-2 text-sm font-medium text-slate-700"
+                      className="h-10 min-w-[40px] appearance-none rounded-full border-0 bg-white px-1 text-right text-[16px] font-medium [text-align-last:right] text-slate-700"
                       value={Math.min(20, Math.max(1, Math.round(Number(newQty)) || 1))}
                       onChange={(e) => {
                         const v = Number(e.target.value)
@@ -1779,7 +1804,7 @@ export function ListPage() {
                     <input
                       type="text"
                       inputMode="decimal"
-                      className="h-10 w-[56px] rounded-full border-0 bg-white px-2 text-center text-sm font-medium text-slate-700 outline-none"
+                      className="h-10 w-[56px] rounded-full border-0 bg-white px-1 text-right text-[16px] font-medium text-slate-700 outline-none"
                       value={newQtyText}
                       onFocus={(e) => e.target.select()}
                       onChange={(e) => {
@@ -1799,7 +1824,7 @@ export function ListPage() {
                     />
                   )}
                   <select
-                    className="h-10 min-w-[44px] appearance-none rounded-full border-0 bg-white px-2 text-center text-sm font-medium text-slate-700 [text-align-last:center]"
+                    className="h-10 min-w-[44px] appearance-none rounded-full border-0 bg-white px-1 text-center text-[16px] font-medium text-slate-700 [text-align-last:center]"
                     value={normalizeUnit(newUnit)}
                     onChange={(e) => {
                       const u = normalizeUnit(e.target.value)
@@ -1821,7 +1846,7 @@ export function ListPage() {
               </div>
               <button
                 type="button"
-                className={`mt-2 h-12 w-full rounded-full text-sm font-semibold text-white ${
+                className={`mt-2 h-12 w-full rounded-full text-base font-semibold text-white ${
                   newText.trim()
                     ? 'bg-[linear-gradient(147deg,#00B66F_0%,#005371_100%)]'
                     : 'bg-slate-300'

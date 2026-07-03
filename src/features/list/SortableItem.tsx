@@ -18,7 +18,7 @@ const SWIPE_DELETE_MAX_PX = 78
 
 /** 32×32 quantity control, subtle border at rest */
 const qtyBoxClass =
-  'box-border h-8 w-[48px] min-w-[48px] max-w-[48px] shrink-0 rounded-l-[8px] rounded-r-none border border-r-0 border-slate-200/80 bg-white pl-0 pr-2 py-1.5 text-right text-sm font-medium tabular-nums text-[#505258] outline-none focus:border-slate-400 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-500'
+  'box-border h-8 w-[48px] min-w-[48px] max-w-[48px] shrink-0 rounded-l-[8px] rounded-r-none border border-r-0 border-slate-200/80 bg-white pl-0 pr-2 py-1 text-right text-base font-medium tabular-nums [text-align-last:right] text-[#505258] outline-none focus:border-slate-400 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-500'
 
 const noChevron =
   'appearance-none bg-[length:0] [background-image:none] [&::-webkit-appearance]:none'
@@ -178,10 +178,10 @@ export function SortableItem({
   }
 
   const unitSelectClass =
-    `${noChevron} h-8 w-[48px] min-w-[48px] max-w-[48px] shrink-0 cursor-pointer rounded-l-none rounded-r-[8px] border border-slate-200/80 bg-white px-2 py-1.5 text-left text-sm font-medium leading-5 text-[#505258] outline-none ring-0 focus:border-slate-400 focus:outline-none focus:ring-0 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-500`
+    `${noChevron} h-8 w-[48px] min-w-[48px] max-w-[48px] shrink-0 cursor-pointer rounded-l-none rounded-r-[8px] border border-slate-200/80 bg-white px-2 py-1 text-left text-base font-medium leading-5 text-[#505258] outline-none ring-0 focus:border-slate-400 focus:outline-none focus:ring-0 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-500`
 
   const nameLocked = overflowMenu && onTextChange && !nameFieldActive
-  const nameTextClass = `min-w-0 flex-1 rounded-[4px] border border-transparent bg-transparent px-1 py-1 text-left text-sm font-medium leading-5 outline-none focus:border-[#1868DB] disabled:opacity-50 ${
+  const nameTextClass = `min-w-0 flex-1 rounded-[4px] border border-transparent bg-transparent px-1 py-0.5 text-left text-base font-medium leading-5 outline-none focus:border-[#1868DB] disabled:opacity-50 ${
     item.checked ? 'text-slate-400 line-through' : 'text-slate-600 dark:text-slate-50'
   }`
 
@@ -297,7 +297,7 @@ export function SortableItem({
         </div>
       ) : null}
       <div
-        className="relative z-10 flex h-8 items-center gap-[9px] bg-white transition-transform duration-75 dark:bg-slate-900"
+        className="relative z-10 flex h-8 items-center gap-[9px] bg-white py-0.5 transition-transform duration-75 dark:bg-slate-900"
         style={{ transform: `translateX(${swipeOffset}px)` }}
       >
         {showPrices && isOnSpecial ? <span className="absolute inset-y-0 left-0 w-0.5 bg-amber-300" aria-hidden /> : null}
