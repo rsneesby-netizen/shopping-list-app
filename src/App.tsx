@@ -7,6 +7,7 @@ import { ListPage } from './features/list/ListPage'
 import { NewListPage } from './features/list/NewListPage'
 import { ListsHomePage } from './features/lists/ListsHomePage'
 import { getSupabase } from './lib/supabase'
+import { applyThemePreference, readThemePreference, THEME_PREFERENCE_KEY } from './lib/theme'
 
 function useSession() {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
@@ -76,6 +77,26 @@ function AuthedApp() {
 
 export default function App() {
   const configured = Boolean(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY)
+
+  useEffect(() => {
+    const applyCurrent = () => applyThemePreference(readThemePreference())
+    applyCurrent()
+    if (typeof window === 'undefined') return
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const onMediaChange = () => {
+      if (readThemePreference() === 'system') applyCurrent()
+    }
+    const onStorage = (e: StorageEvent) => {
+      if (e.key && e.key !== THEME_PREFERENCE_KEY) return
+      applyCurrent()
+    }
+    media.addEventListener('change', onMediaChange)
+    window.addEventListener('storage', onStorage)
+    return () => {
+      media.removeEventListener('change', onMediaChange)
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [])
 
   return (
     <BrowserRouter>

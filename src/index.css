@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
   --font-sans: system-ui, 'Segoe UI', Roboto, sans-serif;
@@ -42,11 +43,9 @@ select,
   user-select: text;
 }
 
-@media (prefers-color-scheme: dark) {
-  body {
-    background: #0f172a;
-    color: #f1f5f9;
-  }
+html.dark body {
+  background: #0f172a;
+  color: #f1f5f9;
 }
 
 /*
@@ -100,9 +99,7 @@ select,
   outline-offset: 2px;
 }
 
-@media (prefers-color-scheme: dark) {
-  .grocery-checkbox:not(:checked) {
-    border-color: #475569;
-    background-color: #1e293b;
-  }
+html.dark .grocery-checkbox:not(:checked) {
+  border-color: #475569;
+  background-color: #1e293b;
 }

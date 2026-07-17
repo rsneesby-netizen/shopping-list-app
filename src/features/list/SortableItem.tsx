@@ -279,7 +279,7 @@ export function SortableItem({
       className={
         (inGroupedBlock
           ? 'relative overflow-hidden rounded-none bg-transparent dark:bg-transparent'
-          : 'relative overflow-hidden rounded-[8px] bg-white dark:bg-slate-900') +
+          : 'relative overflow-hidden rounded-[8px] bg-white dark:bg-transparent') +
         (rowDrag ? ' cursor-grab active:cursor-grabbing md:touch-none' : '')
       }
     >
@@ -297,7 +297,7 @@ export function SortableItem({
         </div>
       ) : null}
       <div
-        className="relative z-10 flex h-8 items-center gap-[9px] bg-white py-0.5 transition-transform duration-75 dark:bg-slate-900"
+        className="relative z-10 flex h-8 items-center gap-[9px] bg-white py-0.5 transition-transform duration-75 dark:bg-transparent"
         style={{ transform: `translateX(${swipeOffset}px)` }}
       >
         {showPrices && isOnSpecial ? <span className="absolute inset-y-0 left-0 w-0.5 bg-amber-300" aria-hidden /> : null}

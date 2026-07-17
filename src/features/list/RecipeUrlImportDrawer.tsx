@@ -33,6 +33,9 @@ const noChevron =
 const unitSelectClass =
   `${noChevron} h-8 w-[48px] min-w-[48px] max-w-[48px] shrink-0 cursor-pointer rounded-l-none rounded-r-[8px] border border-slate-200/80 bg-white px-2 py-1 text-left text-base font-medium leading-5 text-[#505258] outline-none ring-0 focus:border-slate-400 focus:outline-none focus:ring-0 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-500`
 
+const editableNameInputClass =
+  '-mx-1 min-h-8 min-w-0 flex-1 rounded-[4px] border-0 bg-transparent px-1 py-1 text-left text-base text-slate-900 outline-none ring-0 focus:ring-0 dark:text-slate-50'
+
 export type RecipeUrlImportBatchRow = {
   fingerprint: string
   displayText: string
@@ -431,7 +434,7 @@ export function RecipeUrlImportDrawer({
                           />
                           <input
                             type="text"
-                            className="min-w-0 flex-1 border-0 bg-transparent p-0 text-left text-sm text-slate-900 outline-none ring-0 focus:ring-0 dark:text-slate-50"
+                            className={editableNameInputClass}
                             value={r.displayText}
                             onChange={(e) => setLine(r.id, { displayText: e.target.value })}
                             onFocus={(e) => {
@@ -545,7 +548,7 @@ export function RecipeUrlImportDrawer({
                             />
                             <input
                               type="text"
-                              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-left text-sm text-slate-900 outline-none ring-0 focus:ring-0 dark:text-slate-50"
+                              className={editableNameInputClass}
                               value={r.displayText}
                               onChange={(e) => setLine(r.id, { displayText: e.target.value })}
                               onFocus={(e) => {

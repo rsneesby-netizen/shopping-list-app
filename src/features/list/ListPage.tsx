@@ -44,6 +44,7 @@ import {
 import { getSupabase } from '../../lib/supabase'
 import { readShowPricesPreference, writeShowPricesPreference } from '../../lib/showPricesPreference'
 import { errorMessageFromUnknown, isMissingPriceCalibrationByScopeColumn } from '../../lib/supabaseErrorMessage'
+import { applyThemePreference, readThemePreference, saveThemePreference, type ThemePreference } from '../../lib/theme'
 import type {
   ListCategoryLearningRow,
   ListItemEventRow,
@@ -129,6 +130,7 @@ export function ListPage() {
   const [catOpen, setCatOpen] = useState(false)
   const [storesOpen, setStoresOpen] = useState(false)
   const [headerAction, setHeaderAction] = useState('')
+  const [themePreference, setThemePreference] = useState<ThemePreference>(() => readThemePreference())
   const [error, setError] = useState<string | null>(null)
   const [inviteUrl, setInviteUrl] = useState<string | null>(null)
   const [pendingDuplicateAdd, setPendingDuplicateAdd] = useState<PendingAdd | null>(null)
@@ -144,6 +146,7 @@ export function ListPage() {
   const [shopSelectorVisible, setShopSelectorVisible] = useState(true)
   const [footerKeyboardInset, setFooterKeyboardInset] = useState(0)
   const addItemInputRef = useRef<HTMLInputElement>(null)
+  const themeSelectRef = useRef<HTMLSelectElement>(null)
   const footerSwipeStartYRef = useRef<number | null>(null)
   const footerSwipePointerIdRef = useRef<number | null>(null)
   const footerCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -516,6 +519,25 @@ export function ListPage() {
     if (value === 'aisles') setCatOpen(true)
     if (value === 'stores') setStoresOpen(true)
     if (value === 'invite') void createInvite()
+    if (value === 'theme') {
+      requestAnimationFrame(() => {
+        const el = themeSelectRef.current
+        if (!el) return
+        if (typeof el.showPicker === 'function') el.showPicker()
+        else {
+          el.focus()
+          el.click()
+        }
+      })
+      return
+    }
+    setHeaderAction('')
+  }
+
+  function selectTheme(nextTheme: ThemePreference) {
+    setThemePreference(nextTheme)
+    saveThemePreference(nextTheme)
+    applyThemePreference(nextTheme)
     setHeaderAction('')
   }
 
@@ -1427,10 +1449,10 @@ export function ListPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-lg flex-col scroll-pb-[calc(15rem+env(safe-area-inset-bottom,0px))] bg-white px-2 pb-[calc(15rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-3 sm:pb-[calc(15rem+env(safe-area-inset-bottom,0px))]">
+    <div className="mx-auto flex min-h-screen max-w-lg flex-col scroll-pb-[calc(15rem+env(safe-area-inset-bottom,0px))] bg-slate-50 px-2 pb-[calc(15rem+env(safe-area-inset-bottom,0px))] pt-0 text-slate-900 dark:bg-slate-950 dark:text-slate-100 sm:px-3 sm:pb-[calc(15rem+env(safe-area-inset-bottom,0px))]">
       <div className="sticky top-0 z-40 h-0">
         <div
-          className="pointer-events-none -mx-2 h-[130px] bg-[linear-gradient(to_bottom,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.48)_42%,rgba(255,255,255,0)_100%)] backdrop-blur-[24px] [mask-image:linear-gradient(to_bottom,black_0%,black_55%,transparent_100%)] sm:-mx-3"
+          className="pointer-events-none -mx-2 h-[130px] bg-[linear-gradient(to_bottom,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.48)_42%,rgba(255,255,255,0)_100%)] backdrop-blur-[24px] [mask-image:linear-gradient(to_bottom,black_0%,black_55%,transparent_100%)] dark:bg-[linear-gradient(to_bottom,rgba(15,23,42,0.9)_0%,rgba(15,23,42,0.7)_42%,rgba(15,23,42,0)_100%)] sm:-mx-3"
           aria-hidden
         />
       </div>
@@ -1439,14 +1461,14 @@ export function ListPage() {
           <div className="flex min-w-0 items-center gap-3">
             <Link
               to="/"
-              className="grid h-10 min-h-10 w-10 min-w-10 shrink-0 place-items-center rounded-full bg-white text-slate-700 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-black/15 active:bg-black/15"
+              className="grid h-10 min-h-10 w-10 min-w-10 shrink-0 place-items-center rounded-full bg-white text-slate-700 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-black/15 active:bg-black/15 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-800"
               aria-label="All lists"
               title="All lists"
             >
               <BackToListsIcon className="h-4 w-4 shrink-0" />
             </Link>
             <input
-              className="min-w-0 rounded-[4px] border border-transparent bg-transparent px-1 py-1 text-base font-medium leading-5 text-slate-600 outline-none focus:border-[#1868DB]"
+              className="min-w-0 rounded-[4px] border border-transparent bg-transparent px-1 py-1 text-base font-medium leading-5 text-slate-600 outline-none focus:border-[#1868DB] dark:text-slate-200"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               onBlur={() => void persistTitle(title)}
@@ -1454,7 +1476,7 @@ export function ListPage() {
               aria-label="List name"
             />
           </div>
-          <div className="flex items-center rounded-full bg-white p-1 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)]">
+          <div className="flex items-center rounded-full bg-white p-1 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] dark:bg-slate-900">
             <button
               type="button"
               onClick={toggleMode}
@@ -1477,18 +1499,31 @@ export function ListPage() {
                 id="list-settings-action"
                 value={headerAction}
                 onChange={(e) => handleHeaderActionChange(e.target.value)}
-                className="absolute inset-0 z-10 h-10 w-10 cursor-pointer appearance-none rounded-full bg-transparent text-transparent outline-none hover:bg-black/15 active:bg-black/15"
+                className="absolute inset-0 z-10 h-10 w-10 cursor-pointer appearance-none rounded-full bg-transparent text-transparent outline-none hover:bg-black/15 active:bg-black/15 dark:hover:bg-slate-800 dark:active:bg-slate-800"
                 aria-label="List settings actions"
               >
                 <option value="" hidden />
                 <option value="aisles">Manage store aisle ordering</option>
                 <option value="stores">Manage stores</option>
                 <option value="invite">Invite collaborator</option>
+                <option value="theme">Theme</option>
               </select>
               <div className="pointer-events-none grid h-10 w-10 place-items-center rounded-full">
-                <ToolbarIconMore className="h-4 w-4 text-slate-600" />
+                <ToolbarIconMore className="h-4 w-4 text-slate-600 dark:text-slate-200" />
               </div>
             </div>
+            <select
+              ref={themeSelectRef}
+              value={themePreference}
+              onChange={(e) => selectTheme(e.target.value as ThemePreference)}
+              className="sr-only"
+              aria-label="Theme"
+              tabIndex={-1}
+            >
+              <option value="system">{themePreference === 'system' ? '✓ System' : 'System'}</option>
+              <option value="light">{themePreference === 'light' ? '✓ Light' : 'Light'}</option>
+              <option value="dark">{themePreference === 'dark' ? '✓ Dark' : 'Dark'}</option>
+            </select>
           </div>
         </div>
         <div className="flex min-h-10 items-center justify-between px-2 pr-1">
@@ -1504,7 +1539,7 @@ export function ListPage() {
               </label>
               <select
                 id="list-store-layout"
-                className="h-10 w-full appearance-none rounded-full border border-slate-900/15 bg-white py-2 pl-3 pr-9 text-base font-medium text-slate-600 outline-none hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
+                className="h-10 w-full appearance-none rounded-full border border-slate-900/15 bg-white py-2 pl-3 pr-9 text-base font-medium text-slate-600 outline-none hover:bg-[#F0F1F2] active:bg-[#F0F1F2] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-800"
                 value={list?.store_preset_id ?? ''}
                 onChange={(e) => void persistPreset(e.target.value || null)}
                 aria-label="Store layout"
@@ -1515,7 +1550,7 @@ export function ListPage() {
                   </option>
                 ))}
               </select>
-              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-600" aria-hidden>
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 dark:text-slate-200" aria-hidden>
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
                   <path
                     fillRule="evenodd"
@@ -1535,7 +1570,7 @@ export function ListPage() {
               onClick={() => void undo().then(() => refreshAll())}
               className={`grid h-10 w-10 place-items-center rounded-full bg-white text-slate-600 transition-shadow duration-200 hover:bg-[#F0F1F2] active:bg-[#F0F1F2] ${
                 headerElevated ? 'shadow-[0_4px_12px_rgba(30,31,33,0.18)]' : 'shadow-none'
-              }`}
+              } dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-800`}
               aria-label="Undo"
               title="Undo"
             >
@@ -1547,7 +1582,7 @@ export function ListPage() {
               onClick={() => void redo().then(() => refreshAll())}
               className={`grid h-10 w-10 place-items-center rounded-full bg-white text-slate-600 transition-shadow duration-200 hover:bg-[#F0F1F2] active:bg-[#F0F1F2] ${
                 headerElevated ? 'shadow-[0_4px_12px_rgba(30,31,33,0.18)]' : 'shadow-none'
-              }`}
+              } dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-800`}
               aria-label="Redo"
               title="Redo"
             >
@@ -1558,7 +1593,7 @@ export function ListPage() {
               onClick={toggleView}
               className={`grid h-10 w-10 place-items-center rounded-full bg-white text-slate-600 transition-shadow duration-200 hover:bg-[#F0F1F2] active:bg-[#F0F1F2] ${
                 headerElevated ? 'shadow-[0_4px_12px_rgba(30,31,33,0.18)]' : 'shadow-none'
-              }`}
+              } dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-800`}
               aria-label={view === 'flat' ? 'Switch to grouped view' : 'Switch to flat view'}
               title={view === 'flat' ? 'Switch to grouped view' : 'Switch to flat view'}
             >
@@ -1696,7 +1731,7 @@ export function ListPage() {
                         collapsed ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
                       }`}
                     >
-                      <ul className="min-h-0 flex flex-col gap-2 overflow-hidden rounded-[6px] bg-white dark:bg-slate-900 sm:gap-2">
+                      <ul className="min-h-0 flex flex-col gap-2 overflow-hidden rounded-[6px] bg-white dark:bg-transparent sm:gap-2">
                         {rows.map((item) => (
                           <SortableItem
                             key={item.id}
@@ -1738,7 +1773,7 @@ export function ListPage() {
               </div>
               {completedSorted.length ? (
                 <SortableContext items={completedSorted.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-                  <ul className="flex flex-col gap-2 overflow-hidden rounded-[6px] bg-white dark:bg-slate-900 sm:gap-2">
+                  <ul className="flex flex-col gap-2 overflow-hidden rounded-[6px] bg-white dark:bg-transparent sm:gap-2">
                     {completedSorted.map((item) => (
                       <SortableItem
                         key={item.id}
@@ -1777,7 +1812,7 @@ export function ListPage() {
               <div className="pointer-events-auto grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 p-1">
                 <button
                   type="button"
-                  className="flex h-12 min-w-0 items-center rounded-full bg-white px-3 text-left text-base font-normal text-slate-500 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
+                  className="flex h-12 min-w-0 items-center rounded-full bg-white px-3 text-left text-base font-normal text-slate-500 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2] dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:active:bg-slate-800"
                   onClick={openFooterAddMode}
                   onPointerDown={(e) => {
                     e.preventDefault()
@@ -1788,7 +1823,7 @@ export function ListPage() {
                 </button>
                 <button
                   type="button"
-                  className="flex h-12 min-w-0 items-center gap-2 rounded-full bg-white px-3 text-base font-medium text-slate-700 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
+                  className="flex h-12 min-w-0 items-center gap-2 rounded-full bg-white px-3 text-base font-medium text-slate-700 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2] dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-800"
                   onClick={() => setRecipeUrlOpen(true)}
                 >
                   <span aria-hidden>🔗</span>
@@ -1796,7 +1831,7 @@ export function ListPage() {
                 </button>
                 <button
                   type="button"
-                  className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white text-[18px] text-slate-700 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
+                  className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white text-[18px] text-slate-700 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2] dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-800"
                   onClick={() => setRecOpen(true)}
                   aria-label="Recommendations"
                 >
@@ -1807,7 +1842,7 @@ export function ListPage() {
               <div className="pointer-events-auto flex items-center justify-end p-1">
                 <button
                   type="button"
-                  className="grid h-12 w-12 place-items-center rounded-full bg-white text-[22px] text-slate-700 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
+                  className="grid h-12 w-12 place-items-center rounded-full bg-white text-[22px] text-slate-700 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2] dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-800"
                   onClick={openFooterAddMode}
                   onPointerDown={(e) => {
                     e.preventDefault()
@@ -1821,7 +1856,7 @@ export function ListPage() {
             )
           ) : (
             <div
-              className={`pointer-events-auto relative overflow-visible rounded-t-xl bg-white px-3 py-3 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] transition-all duration-200 ease-out dark:bg-slate-900 ${
+              className={`pointer-events-auto relative overflow-visible rounded-t-xl bg-white px-3 py-3 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] transition-all duration-200 ease-out dark:bg-slate-950 ${
                 footerClosing ? 'translate-y-8 opacity-0' : 'translate-y-0 opacity-100'
               }`}
               onPointerDown={handleFooterSheetPointerDown}
@@ -1831,7 +1866,7 @@ export function ListPage() {
             >
               <button
                 type="button"
-                className="absolute -top-[40px] right-3 z-20 grid h-8 w-8 place-items-center rounded-full bg-white text-[#292A2E] shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2]"
+                className="absolute -top-[40px] right-3 z-20 grid h-8 w-8 place-items-center rounded-full bg-white text-[#292A2E] shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] hover:bg-[#F0F1F2] active:bg-[#F0F1F2] dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800 dark:active:bg-slate-800"
                 onClick={dismissFooterAddMode}
                 aria-label="Close add item panel"
                 title="Close"
@@ -1839,14 +1874,14 @@ export function ListPage() {
                 <svg width="12" height="5" viewBox="0 0 12 5" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
                   <path
                     d="M3.27729e-07 1.25195L5.5 4.87695C5.75041 5.04199 6.07576 5.04199 6.32617 4.87695L11.8262 1.25195L11 -1.97957e-06L5.91309 3.35254L0.826172 -2.869e-06L3.27729e-07 1.25195Z"
-                    fill="#292A2E"
+                    fill="currentColor"
                   />
                 </svg>
               </button>
               <div className="flex items-center gap-2">
                 <input
                   ref={addItemInputRef}
-                  className="h-12 min-w-0 flex-1 rounded-full border-2 border-[#1868DB] bg-white px-3 text-[18px] text-slate-700 outline-none dark:bg-slate-950"
+                  className="h-12 min-w-0 flex-1 rounded-full border-2 border-[#1868DB] bg-white px-3 text-[18px] text-slate-700 outline-none dark:bg-slate-900 dark:text-slate-100"
                   autoFocus
                   autoCapitalize="words"
                   enterKeyHint="done"
@@ -1859,10 +1894,10 @@ export function ListPage() {
                     void addItem()
                   }}
                 />
-                <div className="flex h-12 items-center rounded-full bg-white p-1 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)]">
+                <div className="flex h-12 items-center rounded-full bg-white p-1 shadow-[0_4px_20px_rgba(30,31,33,0.12),0_0_8px_rgba(0,0,0,0.04)] dark:bg-slate-900">
                   {newUnit === 'each' ? (
                     <select
-                      className="h-10 min-w-[40px] appearance-none rounded-full border-0 bg-white px-1 text-right text-[16px] font-medium [text-align-last:right] text-slate-700"
+                      className="h-10 min-w-[40px] appearance-none rounded-full border-0 bg-white px-1 text-right text-[16px] font-medium [text-align-last:right] text-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       value={Math.min(20, Math.max(1, Math.round(Number(newQty)) || 1))}
                       onChange={(e) => {
                         const v = Number(e.target.value)
@@ -1882,7 +1917,7 @@ export function ListPage() {
                     <input
                       type="text"
                       inputMode="decimal"
-                      className="h-10 w-[56px] rounded-full border-0 bg-white px-1 text-right text-[16px] font-medium text-slate-700 outline-none"
+                      className="h-10 w-[56px] rounded-full border-0 bg-white px-1 text-right text-[16px] font-medium text-slate-700 outline-none dark:bg-slate-900 dark:text-slate-100"
                       value={newQtyText}
                       onFocus={(e) => e.target.select()}
                       onChange={(e) => {
@@ -1902,7 +1937,7 @@ export function ListPage() {
                     />
                   )}
                   <select
-                    className="h-10 min-w-[44px] appearance-none rounded-full border-0 bg-white px-1 text-center text-[16px] font-medium text-slate-700 [text-align-last:center]"
+                    className="h-10 min-w-[44px] appearance-none rounded-full border-0 bg-white px-1 text-center text-[16px] font-medium text-slate-700 [text-align-last:center] dark:bg-slate-900 dark:text-slate-100"
                     value={normalizeUnit(newUnit)}
                     onChange={(e) => {
                       const u = normalizeUnit(e.target.value)
