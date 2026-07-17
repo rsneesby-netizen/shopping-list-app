@@ -1731,7 +1731,7 @@ export function ListPage() {
                         collapsed ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
                       }`}
                     >
-                      <ul className="min-h-0 flex flex-col gap-2 overflow-hidden rounded-[6px] bg-white dark:bg-transparent sm:gap-2">
+                      <ul className="min-h-0 flex flex-col gap-2 overflow-hidden rounded-[6px] bg-transparent dark:bg-transparent sm:gap-2">
                         {rows.map((item) => (
                           <SortableItem
                             key={item.id}
@@ -1773,7 +1773,7 @@ export function ListPage() {
               </div>
               {completedSorted.length ? (
                 <SortableContext items={completedSorted.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-                  <ul className="flex flex-col gap-2 overflow-hidden rounded-[6px] bg-white dark:bg-transparent sm:gap-2">
+                  <ul className="flex flex-col gap-2 overflow-hidden rounded-[6px] bg-transparent dark:bg-transparent sm:gap-2">
                     {completedSorted.map((item) => (
                       <SortableItem
                         key={item.id}
