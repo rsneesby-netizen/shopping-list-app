@@ -1449,7 +1449,7 @@ export function ListPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-lg flex-col scroll-pb-[calc(15rem+env(safe-area-inset-bottom,0px))] bg-slate-50 px-2 pb-[calc(15rem+env(safe-area-inset-bottom,0px))] pt-0 text-slate-900 dark:bg-slate-950 dark:text-slate-100 sm:px-3 sm:pb-[calc(15rem+env(safe-area-inset-bottom,0px))]">
+    <div className="mx-auto flex min-h-screen max-w-lg flex-col scroll-pb-[calc(15rem+env(safe-area-inset-bottom,0px))] bg-white px-2 pb-[calc(15rem+env(safe-area-inset-bottom,0px))] pt-0 text-slate-900 dark:bg-black dark:text-slate-100 sm:px-3 sm:pb-[calc(15rem+env(safe-area-inset-bottom,0px))]">
       <div className="sticky top-0 z-40 h-0">
         <div
           className="pointer-events-none -mx-2 h-[130px] bg-[linear-gradient(to_bottom,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.48)_42%,rgba(255,255,255,0)_100%)] backdrop-blur-[24px] [mask-image:linear-gradient(to_bottom,black_0%,black_55%,transparent_100%)] dark:bg-[linear-gradient(to_bottom,rgba(15,23,42,0.9)_0%,rgba(15,23,42,0.7)_42%,rgba(15,23,42,0)_100%)] sm:-mx-3"
